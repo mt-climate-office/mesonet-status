@@ -719,35 +719,28 @@
     </div>
 
     <div class="info-section">
-      <h3>The basics</h3>
-      <p>Live reporting status for every station in the
-      <a href="https://climate.umt.edu/mesonet" target="_blank" rel="noopener">Montana Mesonet</a>
-      — HydroMet + AgriMet — refreshed every 5 minutes from
-      <a href="https://mesonet.climate.umt.edu/api/stations/?type=json" target="_blank" rel="noopener"><code>/api/stations/</code></a> and
-      <a href="https://mesonet.climate.umt.edu/api/latest/?type=json" target="_blank" rel="noopener"><code>/api/latest/</code></a>.</p>
+      <h3>Modes</h3>
       <ul>
-        <li><strong>Status</strong> — green if the station posted in the last hour, red otherwise.</li>
-        <li><strong>Time since</strong> — 5 binned shades from &lt;1 h to &gt;24 h. Palette: <a href="https://www.fabiocrameri.ch/colourmaps/" target="_blank" rel="noopener">Crameri <em>roma</em></a>, CVD-safe.</li>
+        <li><strong>Status</strong> — green if reported in the last hour, red otherwise.</li>
+        <li><strong>Time since</strong> — 5 bins from &lt;1 h to &gt;24 h.</li>
       </ul>
     </div>
 
     <div class="info-section">
       <h3>How to use it</h3>
       <ul>
-        <li><strong>Search</strong> — Press <kbd>/</kbd> anywhere to jump to the box; arrows + <kbd>Enter</kbd> pick a station.</li>
-        <li><strong>Network chips</strong> — Toggle HydroMet / AgriMet. Hiding a network collapses any stacked sites at that location.</li>
-        <li><strong>Legend rows</strong> — Click to hide/show a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.</li>
-        <li><strong>Hover a dot</strong> for name, ID, and "X min ago"; <strong>click</strong> for a popup with dashboard + raw-data links.</li>
-        <li><strong>Co-located sites</strong> — HydroMet is the visible anchor with a count badge. Hover (desktop) or tap (mobile) to fan the others out; click a foot for its popup.</li>
-        <li><strong>Labels</strong> button toggles station IDs next to each dot. Map controls include zoom + a "fit Montana" button.</li>
-        <li><strong>Reservation outlines</strong> — The 7 federal reservations in MT are drawn underneath the dots, named at zoom ≥ 7.</li>
-        <li><kbd>Esc</kbd> closes popups, spiders, and this dialog.</li>
+        <li><strong>Search</strong> — press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> + <kbd>Enter</kbd> to pick.</li>
+        <li><strong>Networks</strong> — chips toggle HydroMet / AgriMet.</li>
+        <li><strong>Legend</strong> — click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate.</li>
+        <li><strong>Hover</strong> a dot for time since last report; <strong>click</strong> for full details + dashboard link.</li>
+        <li><strong>Stacked sites</strong> — hover or tap the count badge to fan the stations out; click a foot for that one.</li>
+        <li><kbd>Esc</kbd> closes any popup or fan-out.</li>
       </ul>
     </div>
 
     <div class="info-section">
-      <h3>Share or bookmark this view</h3>
-      <p>Every choice — map center, zoom, mode, networks, legend, theme, and the open station — is mirrored in the URL. Just copy the address bar. Deep-link a single station with <code>?station=aceabsar</code>.</p>
+      <h3>Share or bookmark</h3>
+      <p>The URL reflects every choice — copy it from the address bar. <code>?station=&lt;id&gt;</code> deep-links a single station.</p>
     </div>
   </div>
 </dialog>
