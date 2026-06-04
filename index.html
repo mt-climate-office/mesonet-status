@@ -250,19 +250,51 @@
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
 
-    /* Chrome/Safari paint an inset autofill background on the input as soon
-       as the typed value matches a single datalist option (a "preview" of
-       autofill). The transition hack alone can't suppress the instant-apply
-       path; the box-shadow mask uses the same solid --input-bg as the natural
-       state, so the input looks pixel-identical autofilled or not. */
-    input[type="search"]:-webkit-autofill,
-    input[type="search"]:-webkit-autofill:hover,
-    input[type="search"]:-webkit-autofill:focus,
-    input[type="search"]:-webkit-autofill:active {
-      -webkit-text-fill-color: var(--text-primary);
-      -webkit-box-shadow: inset 0 0 0 1000px var(--input-bg);
-      caret-color: var(--text-primary);
-      transition: background-color 9999s ease-out 0s;
+    /* Custom search suggestions listbox — replaces native <datalist> so the
+       popup is themed (the native popup is unstylable Chrome UI). */
+    #search-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      min-width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow);
+      list-style: none;
+      margin: 0; padding: 4px;
+      max-height: 280px;
+      overflow-y: auto;
+      z-index: 50;
+    }
+    #search-dropdown[hidden] { display: none; }
+    #search-dropdown li {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #search-dropdown li:hover,
+    #search-dropdown li.active {
+      background: var(--accent-hover);
+      color: var(--text-primary);
+    }
+    #search-dropdown .search-name {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    #search-dropdown .search-meta {
+      flex-shrink: 0;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
     }
 
     .search-kbd {
@@ -532,13 +564,16 @@
   </div>
 
   <div class="controls">
-    <!-- Primary action: search a station. Press / anywhere to jump here. -->
+    <!-- Primary action: search a station. Press / anywhere to jump here.
+         Custom listbox dropdown (not <datalist>) so the popup is fully themed. -->
     <div class="search-wrap">
       <label for="search-input" class="sr-only">Search stations</label>
-      <input type="search" id="search-input" list="stations-list"
+      <input type="search" id="search-input"
+             role="combobox" aria-autocomplete="list"
+             aria-controls="search-dropdown" aria-expanded="false"
              placeholder="Search stations…" autocomplete="off">
       <kbd class="search-kbd" aria-hidden="true">/</kbd>
-      <datalist id="stations-list"></datalist>
+      <ul id="search-dropdown" role="listbox" hidden></ul>
     </div>
 
     <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
@@ -742,7 +777,7 @@
   const legendRowsEl  = document.getElementById('legend-rows');
   const legendTitleEl = document.getElementById('legend-title');
   const searchInput   = document.getElementById('search-input');
-  const stationsList  = document.getElementById('stations-list');
+  const searchDropdown= document.getElementById('search-dropdown');
   const infoModal     = document.getElementById('info-modal');
 
   let _toastTimer;
@@ -1458,37 +1493,94 @@
     }
   }
 
-  // ── Search (datalist + flyTo + popup) ────────────────────────────────────
+  // ── Search (custom listbox dropdown + flyTo + popup) ─────────────────────
+  // Custom rather than native <datalist> so the popup honors the app theme.
+  let _searchSorted = [];
+  let _activeSearchIndex = -1;
+  const SEARCH_MAX_RESULTS = 8;
+
   function populateSearch() {
-    stationsList.innerHTML = '';
-    const sorted = [...stations].sort((a, b) => a.name.localeCompare(b.name));
-    for (const s of sorted) {
-      const opt = document.createElement('option');
-      opt.value = `${s.name} (${s.station}) — ${s.sub_network || '—'}`;
-      stationsList.appendChild(opt);
-    }
+    _searchSorted = [...stations].sort((a, b) => a.name.localeCompare(b.name));
   }
-  searchInput.addEventListener('change', () => {
-    const v = searchInput.value;
-    // Try to extract "(stationid)" from the chosen suggestion
-    const m = v.match(/\(([^)]+)\)/);
-    let id = m ? m[1].trim() : null;
-    if (!id) {
-      // Free-form fallback — case-insensitive name or id substring
-      const q = v.trim().toLowerCase();
-      if (!q) return;
-      const hit = stations.find(s =>
-        s.station.toLowerCase() === q ||
-        s.name.toLowerCase()    === q ||
-        s.name.toLowerCase().includes(q) ||
-        s.station.toLowerCase().includes(q));
-      if (hit) id = hit.station;
+
+  function matchScore(s, q) {
+    const n = s.name.toLowerCase();
+    const id = s.station.toLowerCase();
+    if (n === q || id === q)   return 0;
+    if (n.startsWith(q))       return 1;
+    if (id.startsWith(q))      return 2;
+    if (n.includes(q))         return 3;
+    if (id.includes(q))        return 4;
+    return Infinity;
+  }
+
+  function showSearchDropdown(rawQuery) {
+    const q = rawQuery.trim().toLowerCase();
+    if (!q) { hideSearchDropdown(); return; }
+    const matches = _searchSorted
+      .map(s => ({ s, score: matchScore(s, q) }))
+      .filter(m => m.score < Infinity)
+      .sort((a, b) => a.score - b.score || a.s.name.localeCompare(b.s.name))
+      .slice(0, SEARCH_MAX_RESULTS)
+      .map(m => m.s);
+    if (matches.length === 0) { hideSearchDropdown(); return; }
+
+    searchDropdown.innerHTML = '';
+    for (const s of matches) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.dataset.stationId = s.station;
+      li.id = `search-opt-${s.station}`;
+      const name = document.createElement('span');
+      name.className = 'search-name';
+      name.textContent = s.name;
+      const meta = document.createElement('span');
+      meta.className = 'search-meta';
+      meta.textContent = `${s.station} · ${s.sub_network || '—'}`;
+      li.appendChild(name);
+      li.appendChild(meta);
+      // mousedown (not click) so the option commits before the input's blur.
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        selectStation(s.station);
+      });
+      searchDropdown.appendChild(li);
     }
-    if (!id) { showToast('No matching station'); return; }
-    flyToAndOpen(id);
+    searchDropdown.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+    _activeSearchIndex = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+  }
+
+  function hideSearchDropdown() {
+    searchDropdown.hidden = true;
+    searchInput.setAttribute('aria-expanded', 'false');
+    _activeSearchIndex = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+  }
+
+  function selectStation(stationId) {
+    hideSearchDropdown();
+    flyToAndOpen(stationId);
     searchInput.value = '';
     searchInput.blur();
-  });
+  }
+
+  function setActiveSearchItem(idx) {
+    const items = searchDropdown.querySelectorAll('li');
+    if (!items.length) return;
+    if (idx < 0)               idx = items.length - 1;
+    if (idx >= items.length)   idx = 0;
+    _activeSearchIndex = idx;
+    items.forEach((it, i) => it.classList.toggle('active', i === idx));
+    items[idx].scrollIntoView({ block: 'nearest' });
+    searchInput.setAttribute('aria-activedescendant', items[idx].id);
+  }
+
+  searchInput.addEventListener('input',  () => showSearchDropdown(searchInput.value));
+  searchInput.addEventListener('focus',  () => { if (searchInput.value) showSearchDropdown(searchInput.value); });
+  // Delay so a click/mousedown on an option can fire before we hide the list.
+  searchInput.addEventListener('blur',   () => setTimeout(hideSearchDropdown, 120));
 
   function flyToAndOpen(stationId) {
     const s = stationById.get(stationId);
@@ -1834,11 +1926,27 @@
       searchInput.select();
     }
   });
-  // ESC inside the search input clears it and blurs.
+  // Keyboard nav inside the custom dropdown.
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       searchInput.value = '';
+      hideSearchDropdown();
       searchInput.blur();
+      return;
+    }
+    if (searchDropdown.hidden) return;
+    const items = searchDropdown.querySelectorAll('li');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveSearchItem(_activeSearchIndex + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveSearchItem(_activeSearchIndex - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const idx = _activeSearchIndex >= 0 ? _activeSearchIndex : 0;
+      selectStation(items[idx].dataset.stationId);
     }
   });
 
