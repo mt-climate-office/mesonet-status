@@ -291,9 +291,27 @@
       max-height: 500px; opacity: 1; margin-top: 6px;
       transition: max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, margin-top 0.2s ease;
     }
-    .legend-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+    .legend-row {
+      display: flex; align-items: center; gap: 7px;
+      padding: 3px 6px; margin: 0;
+      width: 100%; text-align: left;
+      background: none; border: 0; font: inherit; color: inherit;
+      border-radius: 4px; cursor: pointer;
+      transition: background var(--transition), opacity var(--transition);
+    }
+    .legend-row:hover, .legend-row:focus-visible {
+      background: var(--accent-hover);
+      outline: none;
+    }
+    .legend-row.off { opacity: 0.4; }
+    .legend-row.off .legend-lbl { text-decoration: line-through; }
     .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid var(--border-glass); }
     .legend-lbl { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; }
+    .legend-hint {
+      margin-top: 6px; padding: 0 4px;
+      font-size: 0.62rem; font-style: italic;
+      color: var(--text-muted);
+    }
 
     /* ── Popup ─────────────────────────────────────────────────────────────── */
     .maplibregl-popup { max-width: 320px !important; }
@@ -771,6 +789,14 @@
     if (minSince == null) return 'null';
     return minSince < 60 ? 'fresh' : 'stale';
   }
+  // Discrete bin index for time-since mode: '0'..'4' for TIME_BINS, or 'null'.
+  // Strings, so the same value type covers both modes in URL params + filters.
+  function timeBinKey(minSince) {
+    if (minSince == null) return 'null';
+    let i = 0;
+    while (i < TIME_BINS.length - 1 && minSince >= TIME_BINS[i].max) i++;
+    return String(i);
+  }
 
   // ── State ────────────────────────────────────────────────────────────────
   let stations    = [];                       // raw /api/stations response
@@ -810,6 +836,22 @@
   const _initZoom   = parseFloat(urlParams.get('zoom'));
   const _hasInitPos = Number.isFinite(_initLng) && Number.isFinite(_initLat) && Number.isFinite(_initZoom);
   const _initStation = urlParams.get('station') || null;
+
+  // ── Legend category visibility (Plotly-style toggles) ────────────────────
+  // Each mode has its own visible-category set. Missing URL param = all visible.
+  const ALL_STATUS_CATS = ['fresh', 'stale', 'null'];
+  const ALL_TIME_CATS   = ['0', '1', '2', '3', '4', 'null'];
+  function parseCatSet(urlKey, allKeys) {
+    const u = urlParams.get(urlKey);
+    if (u === null) return new Set(allKeys);
+    const set = new Set(u.split(',').filter(Boolean).filter(k => allKeys.includes(k)));
+    return set.size ? set : new Set();   // an explicit empty list = nothing visible
+  }
+  const visibleStatusCats = parseCatSet('scat', ALL_STATUS_CATS);
+  const visibleTimeCats   = parseCatSet('tcat', ALL_TIME_CATS);
+  function currentCats()    { return activeMode === 'status' ? visibleStatusCats : visibleTimeCats; }
+  function currentAllCats() { return activeMode === 'status' ? ALL_STATUS_CATS   : ALL_TIME_CATS; }
+  function currentCatKey()  { return activeMode === 'status' ? 'staleStatus'     : 'timeBinKey'; }
 
   let _selectedStation = _initStation;
 
@@ -906,7 +948,7 @@
       });
     }
 
-    applySubnetFilter();
+    applyAllFilters();
     refreshDotColors();
     applyLabelsVisibility();
   }
@@ -1023,7 +1065,7 @@
       buildFilterUI();
       populateSearch();
       rebuildSource();
-      applySubnetFilter();   // re-apply now that activeNetworks is populated
+      applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
       // Deep-link from ?station=… in URL
       if (_initStation && stationById.has(_initStation)) {
@@ -1125,8 +1167,9 @@
           datetime:        ts,
           minutesSince:    mins,
           staleStatus:     statusBucket(mins),
-          colocationCount: bucketSize.get(k)   || 1,
-          colocationIndex: bucketIndex.get(s.station) || 0,
+          timeBinKey:      timeBinKey(mins),
+          colocationCount: bucketSize.get(k),
+          colocationIndex: bucketIndex.get(s.station),
           bucket:          k,
         },
       });
@@ -1166,28 +1209,31 @@
         if (on) activeNetworks.add(net);
         else    activeNetworks.delete(net);
         lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
-        applySubnetFilter();
+        applyAllFilters();
         pushState();
       });
       subnetFiltersEl.appendChild(chip);
     }
   }
-  function applySubnetFilter() {
+  // Combined filter: sub-network (chips) × legend-category visibility.
+  // Anchor-only filter is added on top for the main + badge + label layers.
+  function applyAllFilters() {
     if (!map.getLayer('stations-layer')) return;
-    const wanted = ['literal', [...activeNetworks]];
-    const subnetMatch = ['in', ['get', 'sub_network'], wanted];
+    const subnetMatch = ['in', ['get', 'sub_network'], ['literal', [...activeNetworks]]];
+    const catMatch    = ['in', ['get', currentCatKey()], ['literal', [...currentCats()]]];
+    const anchorOnly  = ['==', ['get', 'colocationIndex'], 0];
 
     map.setFilter('stations-layer',
-      ['all', ['==', ['get', 'colocationIndex'], 0], subnetMatch]);
+      ['all', anchorOnly, subnetMatch, catMatch]);
     map.setFilter('stations-badge',
-      ['all', ['==', ['get', 'colocationIndex'], 0], ['>', ['get', 'colocationCount'], 1], subnetMatch]);
+      ['all', anchorOnly, ['>', ['get', 'colocationCount'], 1], subnetMatch, catMatch]);
     if (map.getLayer('stations-id-label')) {
       map.setFilter('stations-id-label',
-        ['all', ['==', ['get', 'colocationIndex'], 0], subnetMatch]);
+        ['all', anchorOnly, subnetMatch, catMatch]);
     }
-    map.setFilter('spider-layer', subnetMatch);
+    map.setFilter('spider-layer', ['all', subnetMatch, catMatch]);
     if (map.getLayer('spider-id-label')) {
-      map.setFilter('spider-id-label', subnetMatch);
+      map.setFilter('spider-id-label', ['all', subnetMatch, catMatch]);
     }
   }
 
@@ -1233,7 +1279,7 @@
       for (const chip of subnetFiltersEl.querySelectorAll('.chip')) {
         if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
       }
-      applySubnetFilter();
+      applyAllFilters();
     }
     closeSpider();
     map.flyTo({
@@ -1354,6 +1400,7 @@
           datetime: ts,
           minutesSince: mins,
           staleStatus: statusBucket(mins),
+          timeBinKey:  timeBinKey(mins),
           colocationCount: 1,
           colocationIndex: 0,
           bucket: _spiderBucket,
@@ -1400,6 +1447,9 @@
     const params = {};
     if (activeMode !== 'status') params.mode = activeMode;
     params.net = [...activeNetworks].join(',');
+    // Only encode category visibility if it deviates from "all visible"
+    if (visibleStatusCats.size !== ALL_STATUS_CATS.length) params.scat = [...visibleStatusCats].join(',');
+    if (visibleTimeCats.size   !== ALL_TIME_CATS.length)   params.tcat = [...visibleTimeCats].join(',');
     if (labelsOn) params.labels = 'on';
     if (legendCollapsed) params.legend = 'collapsed';
     const theme = document.documentElement.dataset.theme;
@@ -1460,11 +1510,14 @@
       openPopupFor(props.station, lngLat);
       return;
     }
-    // Click on the anchor (or its badge) of a stacked site → toggle spider, no popup
+    // Click on the anchor (or its badge) of a stacked site → ensure the spider
+    // is open AND open the anchor station's popup. (Hover already opens the spider
+    // on desktop; on mobile this click is the first user gesture.) Dismissal is
+    // via clicking elsewhere or pressing Esc — same as any popup.
     if (props.colocationCount > 1) {
       cancelSpiderClose();
-      if (_spiderBucket === props.bucket) closeSpider();
-      else openSpider(props.bucket, lngLat);
+      if (_spiderBucket !== props.bucket) openSpider(props.bucket, lngLat);
+      openPopupFor(props.station, lngLat);
       return;
     }
     // Plain (non-co-located) station — close any open spider, open popup directly
@@ -1543,6 +1596,7 @@
         b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
       }
       refreshDotColors();
+      applyAllFilters();  // category filter belongs to the active mode
       pushState();
     });
   }
@@ -1593,30 +1647,99 @@
     pushState();
   });
 
-  // ── Legend ───────────────────────────────────────────────────────────────
+  // ── Legend (Plotly-style toggles) ────────────────────────────────────────
+  // Single click toggles a category; double-click isolates that category
+  // (double-click an already-isolated category to show all again).
+  const LEGEND_DBLCLICK_MS = 280;
+
   function renderLegend() {
     legendRowsEl.innerHTML = '';
     const rows = activeMode === 'status'
       ? [
-          { color: STATUS_FRESH, label: 'Reported < 1 h ago' },
-          { color: STATUS_STALE, label: 'Stale (≥ 1 h)' },
-          { color: NULL_COLOR,   label: 'No record' },
+          { key: 'fresh', color: STATUS_FRESH, label: 'Reported < 1 h ago' },
+          { key: 'stale', color: STATUS_STALE, label: 'Stale (≥ 1 h)' },
+          { key: 'null',  color: NULL_COLOR,   label: 'No record' },
         ]
       : [
-          ...TIME_BINS.map(b => ({ color: b.color, label: b.label })),
-          { color: NULL_COLOR, label: 'No record' },
+          ...TIME_BINS.map((b, i) => ({ key: String(i), color: b.color, label: b.label })),
+          { key: 'null', color: NULL_COLOR, label: 'No record' },
         ];
     legendTitleEl.textContent = activeMode === 'status' ? 'Reporting status' : 'Time since last record';
+    const set = currentCats();
     for (const r of rows) {
-      const row = document.createElement('div');
+      const row = document.createElement('button');
+      row.type = 'button';
       row.className = 'legend-row';
-      const sw = document.createElement('div');
-      sw.className = 'legend-swatch'; sw.style.background = r.color;
-      const lb = document.createElement('div');
-      lb.className = 'legend-lbl'; lb.textContent = r.label;
-      row.appendChild(sw); row.appendChild(lb);
+      row.dataset.catKey = r.key;
+      const on = set.has(r.key);
+      row.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (!on) row.classList.add('off');
+      const sw = document.createElement('span');
+      sw.className = 'legend-swatch';
+      sw.style.background = r.color;
+      sw.setAttribute('aria-hidden', 'true');
+      const lb = document.createElement('span');
+      lb.className = 'legend-lbl';
+      lb.textContent = r.label;
+      row.appendChild(sw);
+      row.appendChild(lb);
+      attachLegendHandlers(row, r.key);
       legendRowsEl.appendChild(row);
     }
+    const hint = document.createElement('div');
+    hint.className = 'legend-hint';
+    hint.textContent = 'Click to toggle · Double-click to isolate';
+    legendRowsEl.appendChild(hint);
+  }
+
+  function refreshLegendVisuals() {
+    const set = currentCats();
+    for (const row of legendRowsEl.querySelectorAll('.legend-row')) {
+      const on = set.has(row.dataset.catKey);
+      row.setAttribute('aria-pressed', on ? 'true' : 'false');
+      row.classList.toggle('off', !on);
+    }
+  }
+
+  function attachLegendHandlers(row, key) {
+    let clickTimer = null;
+    row.addEventListener('click', () => {
+      // Defer single-click action so a follow-up dblclick can pre-empt it.
+      if (clickTimer) return;                  // already pending → second click; let dblclick handle it
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        toggleCategory(key);
+      }, LEGEND_DBLCLICK_MS);
+    });
+    row.addEventListener('dblclick', () => {
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      isolateCategory(key);
+    });
+  }
+
+  function toggleCategory(key) {
+    const set = currentCats();
+    if (set.has(key)) set.delete(key);
+    else set.add(key);
+    refreshLegendVisuals();
+    applyAllFilters();
+    pushState();
+  }
+
+  function isolateCategory(key) {
+    const set = currentCats();
+    const all = currentAllCats();
+    // Already isolated to this key → restore everything.
+    if (set.size === 1 && set.has(key)) {
+      set.clear();
+      for (const k of all) set.add(k);
+    } else {
+      set.clear();
+      set.add(key);
+    }
+    refreshLegendVisuals();
+    applyAllFilters();
+    pushState();
   }
 
   // ── Periodic ticks ───────────────────────────────────────────────────────
