@@ -171,8 +171,8 @@
     .brand-title    { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; margin: 0; }
     .brand-subtitle { font-size: 0.55rem; font-weight: 400; letter-spacing: 0.04em; font-style: italic; color: var(--text-dim); white-space: nowrap; }
 
-    .controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; row-gap: 0.3rem; margin-right: auto; }
-    .nav-meta { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+    .controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; row-gap: 0.3rem; }
+    .nav-meta { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; margin-left: auto; }
 
     .nav-btn {
       display: flex; align-items: center; gap: 5px;
@@ -469,7 +469,15 @@
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
     /* Branding stays visible at all widths (per design); the navbar wraps to
-       a second row when needed rather than hiding pieces. */
+       a second row when needed rather than hiding pieces. Below ~1200px the
+       primary controls (search + mode + networks) drop to a dedicated second
+       row; row 1 keeps branding on the left and refresh/labels/theme/info on
+       the right. CSS `order` swaps the visual position without disturbing tab
+       order — search remains keyboard-reachable early via the / shortcut. */
+    @media (max-width: 1200px) {
+      .nav-meta  { order: 1; }
+      .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
+    }
     @media (max-width: 1060px) {
       #navbar { padding-left: 0.6rem; padding-right: 0.6rem; gap: 0.5rem; }
       .nav-meta { gap: 0.3rem; }
