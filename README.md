@@ -33,7 +33,7 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `lat`     | float                                     | Map center latitude                           |
 | `zoom`    | float                                     | Map zoom                                      |
 | `mode`    | `status` \| `timesince`                   | Visualization mode                            |
-| `net`     | comma list (`HydroMet,AgriMet`)           | Active sub-networks. Empty = none.            |
+| `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
 | `theme`   | `light` \| `dark`                         | Theme override                                |
@@ -41,12 +41,15 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 
 Precedence per setting: URL param > `localStorage` > built-in default.
 
+All enum-string values (`mode`, `theme`, `labels`, `legend`, network names, category keys, station IDs) are matched **case-insensitively**. List params accept `+`, spaces, or commas as separators.
+
 Examples:
 
 ```
 /?station=aceabsar
 /?station=aceabsar&lng=-109.61&lat=45.56&zoom=12
-/?mode=timesince&net=AgriMet&theme=light&labels=on&legend=collapsed
+/?mode=timesince&net=agrimet&theme=light&labels=on&legend=collapsed
+/?net=hydromet+agrimet&scat=fresh+stale
 ```
 
 ## Data sources

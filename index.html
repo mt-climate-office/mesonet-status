@@ -14,7 +14,8 @@
   <!-- Prevent theme flash — URL ?theme= wins, then localStorage, then OS preference -->
   <script>
     (function () {
-      const url = new URLSearchParams(location.search).get('theme');
+      const raw = new URLSearchParams(location.search).get('theme');
+      const url = raw == null ? null : raw.toLowerCase();
       const saved = localStorage.getItem('mco-theme');
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       const t = (url === 'dark' || url === 'light') ? url
@@ -809,17 +810,32 @@
 
   // ── URL state ────────────────────────────────────────────────────────────
   // URL params take precedence over localStorage take precedence over defaults.
+  // All enum-string values are matched case-insensitively. Lists may be separated
+  // by spaces (which '+' decodes to via URLSearchParams), commas, or both.
   const urlParams = new URLSearchParams(location.search);
+  const getLower = (key) => {
+    const v = urlParams.get(key);
+    return v == null ? null : v.toLowerCase();
+  };
+  const splitTokens = (raw) =>
+    raw == null ? null : raw.split(/[,\s]+/).filter(Boolean).map(s => s.toLowerCase());
+
+  // Lowercase → canonical lookup for the two known sub-networks. (The API uses
+  // mixed-case strings; URL params are lowercase.)
+  const KNOWN_NETWORKS = ['HydroMet', 'AgriMet'];
+  const networkByLowerName = new Map(KNOWN_NETWORKS.map(n => [n.toLowerCase(), n]));
 
   let activeMode = (() => {
-    const u = urlParams.get('mode');
+    const u = getLower('mode');
     if (u === 'status' || u === 'timesince') return u;
     return localStorage.getItem('mco-status-mode') === 'timesince' ? 'timesince' : 'status';
   })();
 
   let activeNetworks = (() => {
-    const u = urlParams.get('net');
-    if (u !== null) return new Set(u.split(',').filter(Boolean));
+    const tokens = splitTokens(urlParams.get('net'));
+    if (tokens !== null) {
+      return new Set(tokens.map(t => networkByLowerName.get(t)).filter(Boolean));
+    }
     try {
       const saved = JSON.parse(localStorage.getItem('mco-status-networks') || 'null');
       if (Array.isArray(saved)) return new Set(saved);
@@ -831,16 +847,17 @@
   const _initLat    = parseFloat(urlParams.get('lat'));
   const _initZoom   = parseFloat(urlParams.get('zoom'));
   const _hasInitPos = Number.isFinite(_initLng) && Number.isFinite(_initLat) && Number.isFinite(_initZoom);
-  const _initStation = urlParams.get('station') || null;
+  // Station IDs in the API are already lowercase; normalize the URL param too.
+  const _initStation = getLower('station');
 
   // ── Legend category visibility (Plotly-style toggles) ────────────────────
   // Each mode has its own visible-category set. Missing URL param = all visible.
   const ALL_STATUS_CATS = ['fresh', 'stale', 'null'];
   const ALL_TIME_CATS   = ['0', '1', '2', '3', '4', 'null'];
   function parseCatSet(urlKey, allKeys) {
-    const u = urlParams.get(urlKey);
-    if (u === null) return new Set(allKeys);
-    const set = new Set(u.split(',').filter(Boolean).filter(k => allKeys.includes(k)));
+    const tokens = splitTokens(urlParams.get(urlKey));
+    if (tokens === null) return new Set(allKeys);
+    const set = new Set(tokens.filter(k => allKeys.includes(k)));
     return set.size ? set : new Set();   // an explicit empty list = nothing visible
   }
   const visibleStatusCats = parseCatSet('scat', ALL_STATUS_CATS);
@@ -1563,13 +1580,14 @@
   });
 
   // ── URL state push ───────────────────────────────────────────────────────
+  // Lists are space-joined; URLSearchParams encodes spaces as '+', giving
+  // tidy URLs like net=hydromet+agrimet. Enum-string values are lowercase.
   function pushState() {
     const params = {};
     if (activeMode !== 'status') params.mode = activeMode;
-    params.net = [...activeNetworks].join(',');
-    // Only encode category visibility if it deviates from "all visible"
-    if (visibleStatusCats.size !== ALL_STATUS_CATS.length) params.scat = [...visibleStatusCats].join(',');
-    if (visibleTimeCats.size   !== ALL_TIME_CATS.length)   params.tcat = [...visibleTimeCats].join(',');
+    params.net = [...activeNetworks].map(n => n.toLowerCase()).join(' ');
+    if (visibleStatusCats.size !== ALL_STATUS_CATS.length) params.scat = [...visibleStatusCats].join(' ');
+    if (visibleTimeCats.size   !== ALL_TIME_CATS.length)   params.tcat = [...visibleTimeCats].join(' ');
     if (labelsOn) params.labels = 'on';
     if (legendCollapsed) params.legend = 'collapsed';
     const theme = document.documentElement.dataset.theme;
@@ -1723,7 +1741,7 @@
 
   // ── Labels toggle ────────────────────────────────────────────────────────
   let labelsOn = (() => {
-    const u = urlParams.get('labels');
+    const u = getLower('labels');
     if (u === 'on' || u === 'off') return u === 'on';
     return localStorage.getItem('mco-status-labels') === 'on';
   })();
@@ -1747,7 +1765,7 @@
   const legendEl        = document.getElementById('legend');
   const legendToggleBtn = document.getElementById('legend-toggle-btn');
   let legendCollapsed = (() => {
-    const u = urlParams.get('legend');
+    const u = getLower('legend');
     if (u === 'open' || u === 'collapsed') return u === 'collapsed';
     return localStorage.getItem('mco-status-legend') === 'collapsed';
   })();
