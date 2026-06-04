@@ -245,6 +245,27 @@
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
 
+    /* Chrome/Safari treat a datalist input whose value matches a single option
+       as "autofilled" and paint it with the browser's autofill background
+       (yellowish in light mode, white-ish in dark mode). Mask it: inset
+       box-shadow paints over the autofill backdrop, text-fill-color restores
+       our color, and the 9999s transition keeps any new autofill animations
+       from ever flashing the default color. */
+    input[type="search"]:-webkit-autofill,
+    input[type="search"]:-webkit-autofill:hover,
+    input[type="search"]:-webkit-autofill:focus,
+    input[type="search"]:-webkit-autofill:active {
+      -webkit-text-fill-color: var(--text-primary);
+      -webkit-box-shadow: inset 0 0 0 1000px var(--bg-surface);
+      caret-color: var(--text-primary);
+      transition: background-color 9999s ease-out 0s;
+    }
+    [data-theme="light"] input[type="search"]:-webkit-autofill,
+    [data-theme="light"] input[type="search"]:-webkit-autofill:hover,
+    [data-theme="light"] input[type="search"]:-webkit-autofill:focus {
+      -webkit-box-shadow: inset 0 0 0 1000px #ffffff;
+    }
+
     .search-kbd {
       position: absolute;
       right: 6px; top: 50%;
