@@ -659,6 +659,8 @@
   const SEARCH_FLY_SPEED        = 1.4;
   // Label collision detection switches on at this zoom
   const LABEL_MINZOOM           = 6;
+  // Reservation name labels switch on at this zoom (less cluttered at MT extent)
+  const TRIBAL_LABEL_MINZOOM    = 7;
   // Coordinate precision for the co-location bucket key (~11 m at MT latitudes)
   const BUCKET_PRECISION        = 4;
 
@@ -795,9 +797,12 @@
   let latestById  = new Map();                // station id → datetime ms
   let stationById = new Map();                // station id → meta object
   let bucketById  = new Map();                // station id → bucket key
-  let bucketSize  = new Map();                // bucket key → count
-  let bucketIndex = new Map();                // station id → index within bucket (0..n-1)
-  let bucketAnchor= new Map();                // bucket key → anchor station id
+  // Dynamic colocation indices — recomputed every rebuildSource() based on
+  // the currently-visible sub-networks. Hidden-network stations are excluded.
+  let bucketSize    = new Map();              // bucket key → visible count
+  let bucketIndex   = new Map();              // station id → index within visible members (0..n-1)
+  let bucketAnchor  = new Map();              // bucket key → visible anchor station id
+  let bucketMembers = new Map();              // bucket key → [station metadata in display order]
   let _spiderBucket = null;                   // bucket key currently spidered, or null
   let _popup = null;
   let _mapReady = false;
@@ -893,6 +898,24 @@
     if (!map.getSource('spider-lines')) {
       map.addSource('spider-lines', { type: 'geojson', data: emptyFC() });
     }
+    if (!map.getSource('tribal')) {
+      map.addSource('tribal', { type: 'geojson', data: 'data/mt_reservations_simple.geojson' });
+    }
+
+    // Tribal-land fill + outline sit below all our station layers so the dots
+    // always read as primary. The matching label layer is added last (on top).
+    if (!map.getLayer('tribal-fill')) {
+      map.addLayer({
+        id: 'tribal-fill', type: 'fill', source: 'tribal',
+        paint: tribalFillPaint(),
+      });
+    }
+    if (!map.getLayer('tribal-line')) {
+      map.addLayer({
+        id: 'tribal-line', type: 'line', source: 'tribal',
+        paint: tribalLinePaint(),
+      });
+    }
 
     if (!map.getLayer('spider-lines-layer')) {
       map.addLayer({
@@ -960,6 +983,41 @@
         id: 'spider-id-label', type: 'symbol', source: 'spider',
         layout: stationLabelLayout(),
         paint: stationLabelPaint(),
+      });
+    }
+
+    // Reservation name labels — drawn last so they sit above station dots.
+    // Minzoom keeps the map uncluttered at state-extent zoom.
+    if (!map.getLayer('tribal-label')) {
+      map.addLayer({
+        id: 'tribal-label', type: 'symbol', source: 'tribal',
+        minzoom: TRIBAL_LABEL_MINZOOM,
+        layout: {
+          // Map the full Census names to short, mappy display strings.
+          'text-field': ['match', ['get', 'NAME'],
+            'Blackfeet Indian Reservation',         'Blackfeet',
+            'Crow Reservation',                     'Crow',
+            'Flathead Reservation',                 'Flathead',
+            'Fort Belknap Reservation',             'Fort Belknap',
+            'Fort Peck Indian Reservation',         'Fort Peck',
+            'Northern Cheyenne Indian Reservation', 'Northern Cheyenne',
+            "Rocky Boy's Reservation",              "Rocky Boy's",
+            ['get', 'NAME'],
+          ],
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            7,  10,
+            10, 13,
+            13, 16,
+          ],
+          'text-letter-spacing': 0.05,
+          'text-max-width': 8,
+          'text-padding': 2,
+          'text-allow-overlap': false,
+          'symbol-placement': 'point',
+        },
+        paint: tribalLabelPaint(),
       });
     }
 
@@ -1047,6 +1105,45 @@
     }
   }
 
+  // Tribal-lands styling — subtle earthy fill, theme-aware. Sandstone hues
+  // chosen for low chroma so the colored station dots remain primary.
+  function tribalFillPaint() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    return {
+      'fill-color':   dark ? '#b88a5e' : '#9b6b3e',
+      'fill-opacity': dark ? 0.18      : 0.10,
+    };
+  }
+  function tribalLinePaint() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    return {
+      'line-color':   dark ? '#d6a06f' : '#7a4f24',
+      'line-width':   1,
+      'line-opacity': dark ? 0.65      : 0.55,
+    };
+  }
+  function tribalLabelPaint() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    return {
+      'text-color':      dark ? '#d6a06f' : '#6a4520',
+      'text-halo-color': dark ? '#161b22' : '#ffffff',
+      'text-halo-width': 1.4,
+      'text-halo-blur':  0.3,
+    };
+  }
+  function refreshTribalPaint() {
+    if (!map.getLayer('tribal-fill')) return;
+    const fp = tribalFillPaint();
+    map.setPaintProperty('tribal-fill', 'fill-color',   fp['fill-color']);
+    map.setPaintProperty('tribal-fill', 'fill-opacity', fp['fill-opacity']);
+    const lp = tribalLinePaint();
+    map.setPaintProperty('tribal-line', 'line-color',   lp['line-color']);
+    map.setPaintProperty('tribal-line', 'line-opacity', lp['line-opacity']);
+    const tp = tribalLabelPaint();
+    map.setPaintProperty('tribal-label', 'text-color',      tp['text-color']);
+    map.setPaintProperty('tribal-label', 'text-halo-color', tp['text-halo-color']);
+  }
+
   function refreshDotColors() {
     if (!map.getLayer('stations-layer')) return;
     const color = paintColorForMode(activeMode);
@@ -1056,6 +1153,7 @@
       map.setPaintProperty(lid, 'circle-stroke-color', stroke);
     }
     refreshLabelPaint();
+    refreshTribalPaint();
     // Spider connector line color also follows theme
     if (map.getLayer('spider-lines-layer')) {
       // _strokeColor is per-feature; refresh source data so the new color is baked in
@@ -1121,44 +1219,26 @@
       `refreshed ${now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
   }
 
+  // Network priority for choosing a bucket anchor; tiebreak by station id.
+  const netRank = (s) => s === 'HydroMet' ? 0 : s === 'AgriMet' ? 1 : 99;
+
+  // Static index: each station's lat/lon-derived bucket key + metadata lookup.
+  // Co-location structure (count, anchor, index) is recomputed dynamically in
+  // rebuildSource() based on the currently-visible sub-networks — so disabling
+  // a network resolves a 2-stack to a single un-badged dot.
   function indexStations() {
     stationById.clear();
     bucketById.clear();
-    bucketSize.clear();
-    bucketIndex.clear();
-    bucketAnchor.clear();
-
-    // Sort so the anchor of a co-located bucket is the HydroMet station when one exists.
-    // Network priority: HydroMet < AgriMet < other; tiebreak by station id.
-    const netRank = (s) => s === 'HydroMet' ? 0 : s === 'AgriMet' ? 1 : 99;
-    const sorted = [...stations].sort((a, b) => {
-      const d = netRank(a.sub_network) - netRank(b.sub_network);
-      return d !== 0 ? d : a.station.localeCompare(b.station);
-    });
-
-    // Build buckets
-    const bucketMembers = new Map();
-    for (const s of sorted) {
+    for (const s of stations) {
       if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
       stationById.set(s.station, s);
-      const k = bucketKey(s.latitude, s.longitude);
-      bucketById.set(s.station, k);
-      const arr = bucketMembers.get(k) || [];
-      arr.push(s.station);
-      bucketMembers.set(k, arr);
+      bucketById.set(s.station, bucketKey(s.latitude, s.longitude));
     }
-    for (const [k, members] of bucketMembers) {
-      bucketSize.set(k, members.length);
-      bucketAnchor.set(k, members[0]);
-      members.forEach((sid, i) => bucketIndex.set(sid, i));
-    }
-
-    // Initialize sub-network filter set if empty
+    // Initialize sub-network filter set if empty (no URL or localStorage value)
     const allNetworks = new Set(stations.map(s => s.sub_network).filter(Boolean));
     if (activeNetworks.size === 0) {
       activeNetworks = new Set(allNetworks);
     } else {
-      // prune any stale values
       for (const n of [...activeNetworks]) if (!allNetworks.has(n)) activeNetworks.delete(n);
       if (activeNetworks.size === 0) activeNetworks = new Set(allNetworks);
     }
@@ -1166,32 +1246,61 @@
 
   function rebuildSource() {
     if (!map.getSource('stations')) return;
-    const features = [];
+
+    // Group visible-network stations by bucket and (re)compute colocation per
+    // the currently-visible set. This both filters out hidden-network stations
+    // at source-emit time AND re-ranks anchors so a HydroMet hide promotes the
+    // AgriMet station to anchor (or, if alone in its bucket, treats it as a
+    // single non-co-located dot — no badge, no spider).
+    bucketMembers.clear();
+    bucketSize.clear();
+    bucketAnchor.clear();
+    bucketIndex.clear();
+
     for (const s of stations) {
-      if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
-      const k     = bucketById.get(s.station);
-      const ts    = latestById.get(s.station) ?? null;
-      const mins  = minutesSince(ts);
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
-        properties: {
-          station:         s.station,
-          name:            s.name,
-          sub_network:     s.sub_network,
-          datetime:        ts,
-          minutesSince:    mins,
-          staleStatus:     statusBucket(mins),
-          timeBinKey:      timeBinKey(mins),
-          colocationCount: bucketSize.get(k),
-          colocationIndex: bucketIndex.get(s.station),
-          bucket:          k,
-        },
-      });
+      if (!stationById.has(s.station)) continue;             // missing lat/lon, skipped at index time
+      if (s.sub_network && !activeNetworks.has(s.sub_network)) continue;
+      const k = bucketById.get(s.station);
+      let arr = bucketMembers.get(k);
+      if (!arr) { arr = []; bucketMembers.set(k, arr); }
+      arr.push(s);
+    }
+    for (const [k, members] of bucketMembers) {
+      members.sort((a, b) =>
+        netRank(a.sub_network) - netRank(b.sub_network) ||
+        a.station.localeCompare(b.station));
+      bucketSize.set(k, members.length);
+      bucketAnchor.set(k, members[0].station);
+      members.forEach((s, i) => bucketIndex.set(s.station, i));
+    }
+
+    const features = [];
+    for (const [k, members] of bucketMembers) {
+      for (const s of members) {
+        const ts   = latestById.get(s.station) ?? null;
+        const mins = minutesSince(ts);
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+          properties: {
+            station:         s.station,
+            name:            s.name,
+            sub_network:     s.sub_network,
+            datetime:        ts,
+            minutesSince:    mins,
+            staleStatus:     statusBucket(mins),
+            timeBinKey:      timeBinKey(mins),
+            colocationCount: members.length,
+            colocationIndex: bucketIndex.get(s.station),
+            bucket:          k,
+          },
+        });
+      }
     }
     map.getSource('stations').setData({ type: 'FeatureCollection', features });
 
-    // If a spider is open, refresh its feet too
+    // If a spider is open, refresh its feet — the bucket's anchor or membership
+    // may have just changed.
     if (_spiderBucket) rebuildSpider();
   }
 
@@ -1224,31 +1333,29 @@
         if (on) activeNetworks.add(net);
         else    activeNetworks.delete(net);
         lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
+        rebuildSource();   // re-emit source so colocation reflects visible networks
         applyAllFilters();
         pushState();
       });
       subnetFiltersEl.appendChild(chip);
     }
   }
-  // Combined filter: sub-network (chips) × legend-category visibility.
-  // Anchor-only filter is added on top for the main + badge + label layers.
+  // Only the legend-category visibility filter is applied here. Sub-network
+  // filtering happens at source-emit time (see rebuildSource), so hidden-network
+  // features aren't even in the source — no layer filter needed.
   function applyAllFilters() {
     if (!map.getLayer('stations-layer')) return;
-    const subnetMatch = ['in', ['get', 'sub_network'], ['literal', [...activeNetworks]]];
     const catMatch    = ['in', ['get', currentCatKey()], ['literal', [...currentCats()]]];
     const anchorOnly  = ['==', ['get', 'colocationIndex'], 0];
 
-    map.setFilter('stations-layer',
-      ['all', anchorOnly, subnetMatch, catMatch]);
-    map.setFilter('stations-badge',
-      ['all', anchorOnly, ['>', ['get', 'colocationCount'], 1], subnetMatch, catMatch]);
+    map.setFilter('stations-layer',  ['all', anchorOnly, catMatch]);
+    map.setFilter('stations-badge',  ['all', anchorOnly, ['>', ['get', 'colocationCount'], 1], catMatch]);
     if (map.getLayer('stations-id-label')) {
-      map.setFilter('stations-id-label',
-        ['all', anchorOnly, subnetMatch, catMatch]);
+      map.setFilter('stations-id-label', ['all', anchorOnly, catMatch]);
     }
-    map.setFilter('spider-layer', ['all', subnetMatch, catMatch]);
+    map.setFilter('spider-layer', catMatch);
     if (map.getLayer('spider-id-label')) {
-      map.setFilter('spider-id-label', ['all', subnetMatch, catMatch]);
+      map.setFilter('spider-id-label', catMatch);
     }
   }
 
@@ -1294,6 +1401,7 @@
       for (const chip of subnetFiltersEl.querySelectorAll('.chip')) {
         if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
       }
+      rebuildSource();
       applyAllFilters();
     }
     closeSpider();
@@ -1382,17 +1490,16 @@
   }
   function rebuildSpider(anchorLngLatHint) {
     if (_spiderBucket == null || !map.getSource('spider')) return;
-    // Members of this bucket — all stations (anchor + others)
-    const memberIds = [...bucketById.entries()]
-      .filter(([, k]) => k === _spiderBucket)
-      .map(([sid]) => sid);
-    if (memberIds.length <= 1) { closeSpider(); return; }
+    // Members come from the dynamic bucketMembers map, which already excludes
+    // hidden-network stations.
+    const members = bucketMembers.get(_spiderBucket) || [];
+    if (members.length <= 1) { closeSpider(); return; }
 
     const anchorId = bucketAnchor.get(_spiderBucket);
     const anchorMeta = stationById.get(anchorId);
     const anchorLngLat = anchorLngLatHint || [anchorMeta.longitude, anchorMeta.latitude];
     const anchorPx = map.project(anchorLngLat);
-    const others = memberIds.filter(id => id !== anchorId);
+    const others = members.filter(s => s.station !== anchorId).map(s => s.station);
     const radius = SPIDER_RADIUS_PX;
     const stroke = dotStrokeColor();
 
