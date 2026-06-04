@@ -222,11 +222,44 @@
       width: 6px; height: 6px; border-radius: 50%;
       background: var(--accent-light);
       box-shadow: 0 0 0 2px rgba(90,174,232,0.18);
+      animation: refresh-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes refresh-pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .refresh-status .dot { animation: none; }
     }
 
     /* ── Map ───────────────────────────────────────────────────────────────── */
     #map-container { flex: 1; min-height: 0; position: relative; }
     #map { width: 100%; height: 100%; }
+
+    /* Empty-state callout — shown when no stations are visible under the
+       current network / legend filters. Positioned center-top, doesn't block
+       map interaction (pointer-events: none on the wrapper; the action button
+       inside re-enables them). */
+    #empty-state {
+      position: absolute;
+      top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 20;
+      pointer-events: none;
+      max-width: calc(100% - 32px);
+    }
+    #empty-state[hidden] { display: none; }
+    .empty-state-card {
+      pointer-events: auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow);
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .empty-state-card strong { color: var(--text-primary); font-weight: 600; }
 
     /* ── Search input (primary action; lives in navbar) ──────────────────── */
     .search-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -286,6 +319,12 @@
       background: var(--accent-hover);
       color: var(--text-primary);
     }
+    #search-dropdown li.empty {
+      color: var(--text-muted);
+      font-style: italic;
+      cursor: default;
+    }
+    #search-dropdown li.empty:hover { background: none; }
     #search-dropdown .search-name {
       flex: 1; min-width: 0;
       overflow: hidden; text-overflow: ellipsis;
@@ -583,7 +622,7 @@
     <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
     <div class="seg-btns" role="group" aria-label="Visualization mode">
       <button class="nav-btn seg-btn" data-mode="status"    aria-pressed="true">Status</button>
-      <button class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time</button>
+      <button class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time since</button>
     </div>
 
     <!-- Networks (multi-select): any combination. Pills with a check on active. -->
@@ -625,6 +664,8 @@
 
 <div id="map-container">
   <div id="map" role="application" aria-label="Mesonet station status map"></div>
+  <!-- Centered message overlay; shown when no stations match the active filters. -->
+  <div id="empty-state" hidden role="status" aria-live="polite"></div>
 
   <aside id="legend" aria-labelledby="legend-title">
     <div class="legend-header" id="legend-header">
@@ -844,7 +885,16 @@
     if (e.target === infoModal || e.target.dataset.closeModal !== undefined) infoModal.close();
   });
   // Restore focus to the trigger on close (a11y requirement when using dialogs).
-  infoModal.addEventListener('close', () => btnInfo.focus());
+  infoModal.addEventListener('close', () => {
+    btnInfo.focus();
+    lsSet('mco-status-seen-intro', '1');
+  });
+  // First-visit auto-open: on a brand-new visitor, show the help on load so they
+  // know what the colors mean. Opened once; localStorage suppresses subsequent visits.
+  if (!localStorage.getItem('mco-status-seen-intro')) {
+    // Defer one tick so the page is rendered before the dialog steals focus.
+    setTimeout(() => { if (!infoModal.open) infoModal.showModal(); }, 350);
+  }
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   function minutesSince(ts) {
@@ -1518,6 +1568,31 @@
     if (map.getLayer('spider-id-label')) {
       map.setFilter('spider-id-label', catMatch);
     }
+    updateEmptyState();
+  }
+
+  // Show a small callout when current filter state hides everything, so the
+  // user knows the empty map is intentional and how to recover.
+  const emptyStateEl = document.getElementById('empty-state');
+  function updateEmptyState() {
+    if (!emptyStateEl || stations.length === 0) {
+      if (emptyStateEl) emptyStateEl.hidden = true;
+      return;
+    }
+    let msg = null;
+    if (activeNetworks.size === 0) {
+      msg = '<strong>No networks selected.</strong> Click HydroMet or AgriMet to show stations.';
+    } else if (currentCats().size === 0) {
+      msg = '<strong>All legend categories hidden.</strong> Click a legend row to show stations.';
+    } else if (bucketMembers.size === 0) {
+      msg = 'No stations match the current filters.';
+    }
+    if (msg) {
+      emptyStateEl.innerHTML = `<div class="empty-state-card">${msg}</div>`;
+      emptyStateEl.hidden = false;
+    } else {
+      emptyStateEl.hidden = true;
+    }
   }
 
   // ── Search (custom listbox dropdown + flyTo + popup) ─────────────────────
@@ -1550,9 +1625,18 @@
       .sort((a, b) => a.score - b.score || a.s.name.localeCompare(b.s.name))
       .slice(0, SEARCH_MAX_RESULTS)
       .map(m => m.s);
-    if (matches.length === 0) { hideSearchDropdown(); return; }
-
     searchDropdown.innerHTML = '';
+    if (matches.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.setAttribute('aria-disabled', 'true');
+      li.textContent = `No stations match "${rawQuery.trim()}"`;
+      searchDropdown.appendChild(li);
+      searchDropdown.hidden = false;
+      searchInput.setAttribute('aria-expanded', 'true');
+      _activeSearchIndex = -1;
+      return;
+    }
     for (const s of matches) {
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
