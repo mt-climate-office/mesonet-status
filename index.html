@@ -171,13 +171,8 @@
     .brand-title    { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; margin: 0; }
     .brand-subtitle { font-size: 0.55rem; font-weight: 400; letter-spacing: 0.04em; font-style: italic; color: var(--text-dim); white-space: nowrap; }
 
-    .controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.3rem; margin-right: auto; }
-    .control-group { display: flex; align-items: center; gap: 0.4rem; }
-    .control-label {
-      font-size: 0.7rem; font-weight: 500; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
-    }
-    .nav-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+    .controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; row-gap: 0.3rem; margin-right: auto; }
+    .nav-meta { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 
     .nav-btn {
       display: flex; align-items: center; gap: 5px;
@@ -211,33 +206,60 @@
     .seg-btn:last-child  { border-radius: 0 var(--radius-md) var(--radius-md) 0; border-right-width: 1px; }
     .seg-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-light); color: #fff; }
 
-    .refresh-pill {
-      display: inline-flex; align-items: center; gap: 6px;
+    /* Status text on the right; read-only, deliberately subordinated. */
+    .refresh-status {
+      display: inline-flex; align-items: center; gap: 5px;
       font-family: 'Space Mono', monospace;
-      font-size: 0.66rem; color: var(--text-muted);
-      padding: 4px 8px; border: 1px solid var(--border-glass);
-      border-radius: 999px;
+      font-size: 0.65rem; color: var(--text-muted);
+      white-space: nowrap;
+      padding: 0 4px;
     }
-    .refresh-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-light); }
+    .refresh-status .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent-light);
+      box-shadow: 0 0 0 2px rgba(90,174,232,0.18);
+    }
 
     /* ── Map ───────────────────────────────────────────────────────────────── */
     #map-container { flex: 1; min-height: 0; position: relative; }
     #map { width: 100%; height: 100%; }
 
-    /* ── Search input (lives in navbar) ───────────────────────────────────── */
+    /* ── Search input (primary action; lives in navbar) ──────────────────── */
+    .search-wrap { position: relative; display: inline-flex; align-items: center; }
     input[type="search"] {
-      background: none; color: var(--text-primary);
+      background-color: rgba(255,255,255,0.04);
+      color: var(--text-primary);
       border: 1px solid var(--border); border-radius: var(--radius-md);
-      padding: 0 9px; height: 30px;
-      width: 180px; max-width: 100%;
-      font-size: 0.78rem; font-family: inherit;
-      transition: var(--transition);
+      padding: 0 36px 0 30px; height: 32px;
+      width: 240px; max-width: 100%;
+      font-size: 0.82rem; font-family: inherit;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a8190' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+      background-repeat: no-repeat;
+      background-position: 8px center;
+      background-size: 14px 14px;
+      transition: var(--transition), width 0.18s ease-out;
     }
-    input[type="search"]:hover { border-color: var(--accent); background: var(--accent-hover); }
-    input[type="search"]:focus { border-color: var(--accent-light); background: var(--accent-hover); outline: none; width: 220px; }
+    [data-theme="light"] input[type="search"] { background-color: rgba(0,0,0,0.02); }
+    input[type="search"]:hover { border-color: var(--accent); background-color: var(--accent-hover); }
+    input[type="search"]:focus { border-color: var(--accent-light); background-color: var(--accent-hover); outline: none; width: 280px; }
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
-    /* Placeholder needs explicit color for WCAG contrast against the glass background. */
     input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
+
+    .search-kbd {
+      position: absolute;
+      right: 6px; top: 50%;
+      transform: translateY(-50%);
+      font: 600 0.62rem 'Space Mono', monospace;
+      background: var(--border-glass);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--text-muted);
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    /* Hide the / hint once the user has focused the search (or while typing). */
+    .search-wrap:focus-within .search-kbd { opacity: 0; }
 
     /* ── Sub-network chips (navbar toggles) ───────────────────────────────── */
     .chip-group { display: flex; gap: 4px; }
@@ -252,6 +274,12 @@
     }
     .chip:hover { border-color: var(--accent); color: var(--text-primary); background: var(--accent-hover); }
     .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-light); color: #fff; }
+    /* Visual cue that chips are a multi-select (vs. mode's radio-style segmented buttons): a check on the active state. */
+    .chip[aria-pressed="true"]::before {
+      content: '✓';
+      font-size: 0.78em; font-weight: 700; line-height: 1;
+      margin-right: 1px;
+    }
     .chip .chip-count {
       font-family: 'Space Mono', monospace; font-size: 0.65rem;
       padding: 1px 5px; border-radius: 999px;
@@ -446,15 +474,16 @@
     .info-section a:hover { text-decoration: underline; }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
-    @media (max-width: 1400px) { .control-label { display: none; } .btn-label { display: none; } }
+    /* Branding stays visible at all widths (per design); the navbar wraps to
+       a second row when needed rather than hiding pieces. */
     @media (max-width: 1060px) {
-      .brand, .nav-divider { display: none; }
-      #navbar { padding-left: 0.6rem; padding-right: 0.6rem; gap: 0.4rem; }
-      .nav-actions { gap: 0.2rem; }
+      #navbar { padding-left: 0.6rem; padding-right: 0.6rem; gap: 0.5rem; }
+      .nav-meta { gap: 0.3rem; }
     }
     @media (max-width: 640px) {
-      input[type="search"] { width: 140px; }
-      input[type="search"]:focus { width: 160px; }
+      input[type="search"] { width: 160px; }
+      input[type="search"]:focus { width: 200px; }
+      .refresh-status { display: none; }   /* reclaim space on phones */
     }
     /* WCAG 2.5.5 — comfortable touch targets on touch-only devices. */
     @media (hover: none) {
@@ -481,44 +510,38 @@
   </div>
 
   <div class="controls">
-    <div class="control-group">
-      <span class="control-label">Mode</span>
-      <div class="seg-btns" role="group" aria-label="Visualization mode">
-        <button class="nav-btn seg-btn" data-mode="status"     aria-pressed="true">Status</button>
-        <button class="nav-btn seg-btn" data-mode="timesince"  aria-pressed="false">Time since</button>
-      </div>
-    </div>
-
-    <div class="control-group">
-      <span class="control-label">Networks</span>
-      <div class="chip-group" id="subnet-filters" role="group" aria-label="Sub-network filter"></div>
-    </div>
-
-    <div class="control-group">
-      <button class="nav-btn" id="btn-labels" aria-pressed="false" title="Toggle station ID labels">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-          <line x1="7" y1="7" x2="7.01" y2="7"/>
-        </svg>
-        <span class="btn-label">Labels</span>
-      </button>
-    </div>
-
-    <div class="control-group">
-      <label class="control-label" for="search-input">Search</label>
+    <!-- Primary action: search a station. Press / anywhere to jump here. -->
+    <div class="search-wrap">
+      <label for="search-input" class="sr-only">Search stations</label>
       <input type="search" id="search-input" list="stations-list"
              placeholder="Search stations…" autocomplete="off">
+      <kbd class="search-kbd" aria-hidden="true">/</kbd>
       <datalist id="stations-list"></datalist>
     </div>
 
-    <div class="refresh-pill" title="Last refreshed">
-      <span class="dot" aria-hidden="true"></span>
-      <span id="refresh-stamp">loading…</span>
+    <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
+    <div class="seg-btns" role="group" aria-label="Visualization mode">
+      <button class="nav-btn seg-btn" data-mode="status"    aria-pressed="true">Status</button>
+      <button class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time since</button>
     </div>
+
+    <!-- Networks (multi-select): any combination. Pills with a check on active. -->
+    <div class="chip-group" id="subnet-filters" role="group" aria-label="Sub-network filter"></div>
   </div>
 
-  <div class="nav-actions">
+  <div class="nav-meta">
+    <span class="refresh-status" title="Last refreshed">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="refresh-stamp">loading…</span>
+    </span>
+    <button class="nav-btn icon-only" id="btn-labels" aria-pressed="false"
+            title="Toggle station ID labels" aria-label="Toggle station ID labels">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+        <line x1="7" y1="7" x2="7.01" y2="7"/>
+      </svg>
+    </button>
     <button class="nav-btn icon-only" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
       <svg id="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1716,11 +1739,28 @@
     if (!map.getCanvas().style.cursor) hideTooltip();
   });
 
-  // ESC closes spider/popup
+  // Global keyboard shortcuts: ESC closes things; / focuses search.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeSpider();
       closePopup();
+      return;
+    }
+    if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const t = e.target;
+      const inField =
+        t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (inField) return;
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  });
+  // ESC inside the search input clears it and blurs.
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      searchInput.value = '';
+      searchInput.blur();
     }
   });
 
