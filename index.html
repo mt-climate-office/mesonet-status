@@ -642,10 +642,9 @@
   const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
   const LATEST_FOR_URL  = (s) => `https://mesonet.climate.umt.edu/api/latest/?stations=${encodeURIComponent(s)}`;
 
-  // Initial fit (a touch padded around Montana's actual extent)
+  // Initial fit (a touch padded around Montana's actual extent). Snapback on
+  // zoom-out uses these same bounds — matching the snowpack-explorer pattern.
   const MT_FIT_BOUNDS = [[-116.10, 44.30], [-104.00, 49.05]];   // [SW, NE]
-  // Pan-clamp slightly wider so the user can see Montana's edges
-  const MT_MAX_BOUNDS = [[-117.50, 43.20], [-102.50, 50.20]];
   const FIT_OPTS      = { padding: 24, animate: false };
 
   // Auto-refresh latest records every 5 min; refresh "minutes since" colors every 30 s
@@ -859,7 +858,6 @@
     ...(_hasInitPos
       ? { center: [_initLng, _initLat], zoom: _initZoom }
       : { bounds: MT_FIT_BOUNDS, fitBoundsOptions: FIT_OPTS }),
-    maxBounds: MT_MAX_BOUNDS,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
