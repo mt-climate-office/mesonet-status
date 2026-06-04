@@ -1624,6 +1624,23 @@
     }
   });
 
+  // Viewport resize: the zoom that fits Montana is viewport-dependent. After a
+  // resize settles, recompute _fitZoom and snap back to MT if the current zoom
+  // is now below it (e.g., user shrunk the window past where MT fits).
+  // Debounced — `resize` fires continuously during a window drag.
+  let _resizeTimer = null;
+  map.on('resize', () => {
+    if (!_mapReady) return;
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      _resizeTimer = null;
+      _fitZoom = map.cameraForBounds(MT_FIT_BOUNDS, FIT_OPTS).zoom;
+      if (map.getZoom() < _fitZoom) {
+        map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: !reduceMotion });
+      }
+    }, 200);
+  });
+
   // Reflect every pan/zoom in the URL so the view is sharable
   map.on('moveend', pushState);
 
