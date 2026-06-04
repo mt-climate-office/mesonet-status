@@ -274,12 +274,6 @@
     }
     .chip:hover { border-color: var(--accent); color: var(--text-primary); background: var(--accent-hover); }
     .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-light); color: #fff; }
-    /* Visual cue that chips are a multi-select (vs. mode's radio-style segmented buttons): a check on the active state. */
-    .chip[aria-pressed="true"]::before {
-      content: '✓';
-      font-size: 0.78em; font-weight: 700; line-height: 1;
-      margin-right: 1px;
-    }
     .chip .chip-count {
       font-family: 'Space Mono', monospace; font-size: 0.65rem;
       padding: 1px 5px; border-radius: 999px;
@@ -522,7 +516,7 @@
     <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
     <div class="seg-btns" role="group" aria-label="Visualization mode">
       <button class="nav-btn seg-btn" data-mode="status"    aria-pressed="true">Status</button>
-      <button class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time since</button>
+      <button class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time</button>
     </div>
 
     <!-- Networks (multi-select): any combination. Pills with a check on active. -->
