@@ -13,14 +13,17 @@ Color is sampled from [Crameri's *roma*](https://www.fabiocrameri.ch/colourmaps/
 
 Other features:
 
-- HydroMet / AgriMet sub-network toggles with live counts.
-- Search box (datalist autocomplete) over station names and IDs.
-- Co-located sites — the HydroMet station is always the visible anchor; hovering it (desktop) or tapping it (mobile) fans out a spider of the other stations at that location. A second click on a spider foot opens that station's popup.
-- Toggleable station-ID labels with collision-based dodging.
-- Hover tooltip with station name, ID, latest timestamp, and relative time (all in the viewer's local timezone).
-- Bottom-left collapsible legend.
-- Light/dark theme toggle.
-- Zoom-to-Montana button; pan is clamped to the state and zooming out snaps back.
+- **HydroMet / AgriMet** sub-network toggles with live counts. Hiding a network dynamically resolves any stacked sites at that location to single dots.
+- **Search box** with a custom themed dropdown (8 results, scored by relevance), keyboard navigation (`↑` `↓` `Enter`), and a `/` global shortcut to jump to it from anywhere on the page.
+- **Plotly-style interactive legend** in the lower-left: click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.
+- **Co-located sites** — the HydroMet station is always the visible anchor with a count badge. Hover (desktop) or tap (mobile) to fan the others out; a second click on a foot opens that station's popup.
+- **Toggleable station-ID labels** with collision-based dodging.
+- **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
+- **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
+- **Montana state outline** so the state shape reads as the primary frame.
+- **Light/dark theme** with muted [Stadia Alidade Smooth](https://docs.stadiamaps.com/themes/) basemaps designed as data-overlay canvases.
+- **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
+- **First-visit help dialog** auto-opens once so newcomers get the orientation.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
 
 ## Sharable URLs
@@ -34,6 +37,8 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `zoom`    | float                                     | Map zoom                                      |
 | `mode`    | `status` \| `timesince`                   | Visualization mode                            |
 | `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
+| `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
+| `tcat`    | list (`0+1+2+3+4`, `null`)                | Visible Time-since bins (0 = `<1 h`, 4 = `>24 h`). Omitted = all. |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
 | `theme`   | `light` \| `dark`                         | Theme override                                |
@@ -57,7 +62,9 @@ Examples:
 - Stations + metadata: <https://mesonet.climate.umt.edu/api/stations/?type=json>
 - Latest record per station: <https://mesonet.climate.umt.edu/api/latest/?type=json>
 
-The latest endpoint is polled every 5 minutes. Dot colors are also refreshed every 30 seconds against the local clock so freshness stays current between API calls.
+The latest endpoint is polled every 5 minutes. Each response is **merged** into our in-memory store rather than replacing it — the Mesonet API occasionally drops a (different) station per call, and merging keeps a station's last-known timestamp from flickering to "no record" between polls. If a station genuinely stops reporting, its timestamp just ages naturally into the very-stale bin. Dot colors are also refreshed every 30 seconds against the local clock so freshness stays current between API calls.
+
+Static overlay GeoJSON files in `data/` (state, reservations, counties) are built by `data.R` from `tigris` + `rmapshaper` and checked into the repo so the app has zero runtime dependencies beyond the Mesonet API.
 
 ## Development
 
