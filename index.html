@@ -245,25 +245,20 @@
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
 
-    /* Chrome/Safari treat a datalist input whose value matches a single option
-       as "autofilled" and paint it with the browser's autofill background
-       (yellowish in light mode, white-ish in dark mode). Mask it: inset
-       box-shadow paints over the autofill backdrop, text-fill-color restores
-       our color, and the 9999s transition keeps any new autofill animations
-       from ever flashing the default color. */
+    /* When Chrome/Safari decide a datalist input has been "autofilled" (this
+       happens after a programmatic value change in some flows, e.g. our
+       search → re-enable-network → rebuildSource path), they apply their own
+       background. We just want the input to look the same regardless of state:
+       the 9999s transition hack keeps that background from ever animating in,
+       so the input's natural background-color stays visible. No per-theme
+       override needed — same rule in light and dark. */
     input[type="search"]:-webkit-autofill,
     input[type="search"]:-webkit-autofill:hover,
     input[type="search"]:-webkit-autofill:focus,
     input[type="search"]:-webkit-autofill:active {
       -webkit-text-fill-color: var(--text-primary);
-      -webkit-box-shadow: inset 0 0 0 1000px var(--bg-surface);
       caret-color: var(--text-primary);
       transition: background-color 9999s ease-out 0s;
-    }
-    [data-theme="light"] input[type="search"]:-webkit-autofill,
-    [data-theme="light"] input[type="search"]:-webkit-autofill:hover,
-    [data-theme="light"] input[type="search"]:-webkit-autofill:focus {
-      -webkit-box-shadow: inset 0 0 0 1000px #ffffff;
     }
 
     .search-kbd {
@@ -1296,7 +1291,15 @@
       const res = await fetch(LATEST_URL, { cache: 'no-store' });
       if (!res.ok) throw new Error(`latest fetch failed (${res.status})`);
       const latest = await res.json();
-      latestById = new Map(latest.map(r => [r.station, r.datetime]));
+      // Merge rather than replace: the Mesonet /api/latest/ endpoint drops a
+      // (different) station from each call ~once per poll. Without a merge,
+      // those stations would flicker to "no record" until the next poll
+      // happened to include them. With a merge, a station's last-known
+      // timestamp persists; if it's truly gone silent, the timestamp just
+      // ages into the very-stale bin on its own.
+      for (const r of latest) {
+        latestById.set(r.station, r.datetime);
+      }
       rebuildSource();
       refreshStamp();
     } catch (err) {
