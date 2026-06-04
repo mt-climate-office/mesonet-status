@@ -941,6 +941,9 @@
     if (!map.getSource('tribal')) {
       map.addSource('tribal', { type: 'geojson', data: 'data/mt_reservations_simple.geojson' });
     }
+    if (!map.getSource('state')) {
+      map.addSource('state', { type: 'geojson', data: 'data/mt_state_simple.geojson' });
+    }
 
     // Tribal-land fill + outline sit below all our station layers so the dots
     // always read as primary. The matching label layer is added last (on top).
@@ -954,6 +957,16 @@
       map.addLayer({
         id: 'tribal-line', type: 'line', source: 'tribal',
         paint: tribalLinePaint(),
+      });
+    }
+    // Montana state boundary — heavier line so the state shape reads as the
+    // dominant frame. No fill (the basemap already provides context). Sits
+    // above tribal so it's the strongest boundary, below stations so dots win.
+    if (!map.getLayer('state-line')) {
+      map.addLayer({
+        id: 'state-line', type: 'line', source: 'state',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: stateLinePaint(),
       });
     }
 
@@ -1184,6 +1197,23 @@
     map.setPaintProperty('tribal-label', 'text-halo-color', tp['text-halo-color']);
   }
 
+  // Montana state outline — heavier than the tribal lines so it reads as the
+  // primary boundary on the map.
+  function stateLinePaint() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    return {
+      'line-color':   dark ? '#e8ecf0' : '#1a1a2e',
+      'line-width':   2,
+      'line-opacity': 0.55,
+    };
+  }
+  function refreshStatePaint() {
+    if (!map.getLayer('state-line')) return;
+    const p = stateLinePaint();
+    map.setPaintProperty('state-line', 'line-color',   p['line-color']);
+    map.setPaintProperty('state-line', 'line-opacity', p['line-opacity']);
+  }
+
   function refreshDotColors() {
     if (!map.getLayer('stations-layer')) return;
     const color = paintColorForMode(activeMode);
@@ -1194,6 +1224,7 @@
     }
     refreshLabelPaint();
     refreshTribalPaint();
+    refreshStatePaint();
     // Spider connector line color also follows theme
     if (map.getLayer('spider-lines-layer')) {
       // _strokeColor is per-feature; refresh source data so the new color is baked in
