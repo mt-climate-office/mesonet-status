@@ -50,6 +50,14 @@ counties <-
   sf::write_sf("data/mt_counties_simple.geojson",
                delete_dsn = TRUE)
 
+state <-
+  dplyr::summarise(counties) |>
+  dplyr::mutate(GEOID = "30",
+                NAME = "Montana") |>
+  dplyr::select(GEOID, NAME) %T>%
+  sf::write_sf("data/mt_state_simple.geojson",
+               delete_dsn = TRUE)
+
 
 reservations <-
   tigris::native_areas(
