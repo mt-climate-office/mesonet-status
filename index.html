@@ -62,6 +62,9 @@
       --bin3:           #f4d88e;
       --bin4:           #c7894c;
       --bin5:           #7e1900;  /* > 24 h — stale */
+      /* Solid input background — used both for the natural state and the
+         autofill mask so the search field looks identical in either state. */
+      --input-bg:       #232a35;
     }
     [data-theme="light"] {
       --bg-deep:        #f0f2f5;
@@ -81,6 +84,7 @@
       --glass:          rgba(255,255,255,0.88);
       --shadow:         0 4px 24px rgba(0,0,0,0.1);
       --dot-stroke:     #2a2a3a;
+      --input-bg:       #f4f5f7;
     }
 
     /* ── MapLibre control polish (matches snowpack-explorer) ─────────────── */
@@ -227,7 +231,9 @@
     /* ── Search input (primary action; lives in navbar) ──────────────────── */
     .search-wrap { position: relative; display: inline-flex; align-items: center; }
     input[type="search"] {
-      background-color: rgba(255,255,255,0.04);
+      /* Solid bg (not rgba) so it can't be visually replaced by Chrome's
+         autofill mask. The autofill rule below uses the same color. */
+      background-color: var(--input-bg);
       color: var(--text-primary);
       border: 1px solid var(--border); border-radius: var(--radius-md);
       padding: 0 36px 0 30px; height: 32px;
@@ -239,24 +245,22 @@
       background-size: 14px 14px;
       transition: var(--transition), width 0.18s ease-out;
     }
-    [data-theme="light"] input[type="search"] { background-color: rgba(0,0,0,0.02); }
-    input[type="search"]:hover { border-color: var(--accent); background-color: var(--accent-hover); }
-    input[type="search"]:focus { border-color: var(--accent-light); background-color: var(--accent-hover); outline: none; width: 280px; }
+    input[type="search"]:hover { border-color: var(--accent); }
+    input[type="search"]:focus { border-color: var(--accent-light); outline: none; width: 280px; }
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
 
-    /* When Chrome/Safari decide a datalist input has been "autofilled" (this
-       happens after a programmatic value change in some flows, e.g. our
-       search → re-enable-network → rebuildSource path), they apply their own
-       background. We just want the input to look the same regardless of state:
-       the 9999s transition hack keeps that background from ever animating in,
-       so the input's natural background-color stays visible. No per-theme
-       override needed — same rule in light and dark. */
+    /* Chrome/Safari paint an inset autofill background on the input as soon
+       as the typed value matches a single datalist option (a "preview" of
+       autofill). The transition hack alone can't suppress the instant-apply
+       path; the box-shadow mask uses the same solid --input-bg as the natural
+       state, so the input looks pixel-identical autofilled or not. */
     input[type="search"]:-webkit-autofill,
     input[type="search"]:-webkit-autofill:hover,
     input[type="search"]:-webkit-autofill:focus,
     input[type="search"]:-webkit-autofill:active {
       -webkit-text-fill-color: var(--text-primary);
+      -webkit-box-shadow: inset 0 0 0 1000px var(--input-bg);
       caret-color: var(--text-primary);
       transition: background-color 9999s ease-out 0s;
     }
