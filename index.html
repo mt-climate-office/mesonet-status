@@ -559,6 +559,22 @@
     .info-section li { margin-bottom: 0.2rem; }
     .info-section a { color: var(--accent-light); text-decoration: none; }
     .info-section a:hover { text-decoration: underline; }
+    .info-section kbd {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75em;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--text-primary);
+    }
+    .info-section code {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85em;
+      background: var(--bg-raised);
+      border-radius: 3px;
+      padding: 1px 4px;
+    }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
     /* Branding stays visible at all widths (per design); the navbar wraps to
@@ -703,57 +719,35 @@
     </div>
 
     <div class="info-section">
-      <h3>What is this?</h3>
-      <p>The live reporting state of every station in the
+      <h3>The basics</h3>
+      <p>Live reporting status for every station in the
       <a href="https://climate.umt.edu/mesonet" target="_blank" rel="noopener">Montana Mesonet</a>
-      — HydroMet and AgriMet sub-networks — operated by the
-      <a href="https://climate.umt.edu" target="_blank" rel="noopener">Montana Climate Office</a>.</p>
-    </div>
-
-    <div class="info-section">
-      <h3>Visualization modes</h3>
+      — HydroMet + AgriMet — refreshed every 5 minutes from
+      <a href="https://mesonet.climate.umt.edu/api/stations/?type=json" target="_blank" rel="noopener"><code>/api/stations/</code></a> and
+      <a href="https://mesonet.climate.umt.edu/api/latest/?type=json" target="_blank" rel="noopener"><code>/api/latest/</code></a>.</p>
       <ul>
-        <li><strong>Status</strong> — single threshold: dot is "fresh" if the station posted within the last hour, "stale" otherwise.</li>
-        <li><strong>Time since</strong> — five bins of minutes since the latest record, ceiling at &gt;24 h.</li>
-      </ul>
-      <p style="margin-top:0.5rem">Color comes from <a href="https://www.fabiocrameri.ch/colourmaps/" target="_blank" rel="noopener">Crameri's <em>roma</em></a> scientific colour map — perceptually uniform, color-vision-deficiency safe, and ordered green = good → red = bad.</p>
-    </div>
-
-    <div class="info-section">
-      <h3>Controls</h3>
-      <ul>
-        <li><strong>Mode toggle</strong> — Switch between Status and Time-since.</li>
-        <li><strong>Network chips</strong> — Toggle HydroMet / AgriMet visibility; counts show the total stations per sub-network.</li>
-        <li><strong>Labels</strong> — Show or hide station IDs next to each dot. Labels dodge each other to avoid overlap.</li>
-        <li><strong>Search</strong> — Type a station name or ID and pick a suggestion to fly there and open its popup.</li>
-        <li><strong>Zoom to extent</strong> — Snap the map back to fit Montana.</li>
-        <li><strong>Theme</strong> — Toggle light/dark.</li>
-        <li><strong>Legend</strong> — Click the chevron in the lower-left to collapse or expand.</li>
+        <li><strong>Status</strong> — green if the station posted in the last hour, red otherwise.</li>
+        <li><strong>Time since</strong> — 5 binned shades from &lt;1 h to &gt;24 h. Palette: <a href="https://www.fabiocrameri.ch/colourmaps/" target="_blank" rel="noopener">Crameri <em>roma</em></a>, CVD-safe.</li>
       </ul>
     </div>
 
     <div class="info-section">
-      <h3>Map interactions</h3>
+      <h3>How to use it</h3>
       <ul>
-        <li><strong>Hover a dot</strong> — Tooltip with station name, ID, last-record timestamp, and relative time (in your local timezone).</li>
-        <li><strong>Click a dot</strong> — Popup with details and links to the station dashboard + latest data.</li>
-        <li><strong>Co-located sites</strong> — When multiple stations share a location, the HydroMet station is shown with a count badge. Hover (desktop) or tap (mobile) to fan the others out as a "spider"; a second click on a foot opens that station's popup.</li>
-        <li><strong>Esc</strong> — Closes any open popup or spider.</li>
+        <li><strong>Search</strong> — Press <kbd>/</kbd> anywhere to jump to the box; arrows + <kbd>Enter</kbd> pick a station.</li>
+        <li><strong>Network chips</strong> — Toggle HydroMet / AgriMet. Hiding a network collapses any stacked sites at that location.</li>
+        <li><strong>Legend rows</strong> — Click to hide/show a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.</li>
+        <li><strong>Hover a dot</strong> for name, ID, and "X min ago"; <strong>click</strong> for a popup with dashboard + raw-data links.</li>
+        <li><strong>Co-located sites</strong> — HydroMet is the visible anchor with a count badge. Hover (desktop) or tap (mobile) to fan the others out; click a foot for its popup.</li>
+        <li><strong>Labels</strong> button toggles station IDs next to each dot. Map controls include zoom + a "fit Montana" button.</li>
+        <li><strong>Reservation outlines</strong> — The 7 federal reservations in MT are drawn underneath the dots, named at zoom ≥ 7.</li>
+        <li><kbd>Esc</kbd> closes popups, spiders, and this dialog.</li>
       </ul>
     </div>
 
     <div class="info-section">
-      <h3>Sharable URLs</h3>
-      <p>Every piece of UI state — map center, zoom, mode, networks, labels, legend, theme, and the currently-open station — is reflected in the URL. Copy it from the address bar to share or bookmark; loading the URL restores the same view. To deep-link to a station, use <code>?station=aceabsar</code>.</p>
-    </div>
-
-    <div class="info-section">
-      <h3>Data sources</h3>
-      <ul>
-        <li>Stations: <a href="https://mesonet.climate.umt.edu/api/stations/?type=json" target="_blank" rel="noopener"><code>/api/stations/</code></a></li>
-        <li>Latest records: <a href="https://mesonet.climate.umt.edu/api/latest/?type=json" target="_blank" rel="noopener"><code>/api/latest/</code></a></li>
-      </ul>
-      <p style="margin-top:0.5rem">Data auto-refresh every 5 minutes; dot colors update every 30 seconds against the local clock.</p>
+      <h3>Share or bookmark this view</h3>
+      <p>Every choice — map center, zoom, mode, networks, legend, theme, and the open station — is mirrored in the URL. Just copy the address bar. Deep-link a single station with <code>?station=aceabsar</code>.</p>
     </div>
   </div>
 </dialog>
