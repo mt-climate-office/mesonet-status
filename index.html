@@ -110,6 +110,24 @@
     /* ── Reset & base ──────────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Honor OS-level reduced-motion preferences. Map animations are gated in JS. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition-duration: 0.001ms !important;
+        animation-duration:  0.001ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+
+    /* Visually-hidden text for screen-reader announcements + skip-link target. */
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important; height: 1px !important;
+      padding: 0 !important; margin: -1px !important;
+      overflow: hidden !important; clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important; border: 0 !important;
+    }
+
     body {
       font-family: 'Outfit', system-ui, -apple-system, sans-serif;
       background: var(--bg-deep);
@@ -142,7 +160,7 @@
     .logo-img  { width: 40px; height: 40px; border-radius: 6px; display: block; }
     .nav-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
     .brand { display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; line-height: 1.2; }
-    .brand-title    { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+    .brand-title    { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; margin: 0; }
     .brand-subtitle { font-size: 0.55rem; font-weight: 400; letter-spacing: 0.04em; font-style: italic; color: var(--text-dim); white-space: nowrap; }
 
     .controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.3rem; margin-right: auto; }
@@ -210,6 +228,8 @@
     input[type="search"]:hover { border-color: var(--accent); background: var(--accent-hover); }
     input[type="search"]:focus { border-color: var(--accent-light); background: var(--accent-hover); outline: none; width: 220px; }
     input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
+    /* Placeholder needs explicit color for WCAG contrast against the glass background. */
+    input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
 
     /* ── Sub-network chips (navbar toggles) ───────────────────────────────── */
     .chip-group { display: flex; gap: 4px; }
@@ -229,6 +249,8 @@
       padding: 1px 5px; border-radius: 999px;
       background: var(--border-glass); color: inherit;
     }
+    /* Keep the count badge legible when the chip is pressed (accent background). */
+    .chip[aria-pressed="true"] .chip-count { background: rgba(0,0,0,0.28); color: #fff; }
 
     /* ── Legend (bottom-left, collapsible) ────────────────────────────────── */
     #legend {
@@ -249,7 +271,7 @@
     #legend.collapsed #legend-body { max-height: 0; opacity: 0; margin-top: 0; }
     .legend-header {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 8px; cursor: pointer; user-select: none;
+      gap: 8px; user-select: none;
     }
     #legend-title {
       font-size: 0.82rem; font-weight: 600; color: var(--text-primary); margin: 0;
@@ -384,7 +406,7 @@
       padding: 1.5rem; box-shadow: var(--shadow);
     }
     .info-modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; gap: 1rem; }
-    .info-modal-title    { font-size: 1.05rem; font-weight: 700; color: var(--accent-light); }
+    .info-modal-title    { font-size: 1.05rem; font-weight: 700; color: var(--accent-light); margin: 0; }
     .info-modal-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; }
     .modal-close { display: flex; align-items: center; justify-content: center; background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; line-height: 1; flex-shrink: 0; min-width: 34px; min-height: 34px; transition: var(--transition); }
     .modal-close:hover { color: var(--text-primary); border-color: var(--accent-light); }
@@ -408,6 +430,13 @@
       input[type="search"] { width: 140px; }
       input[type="search"]:focus { width: 160px; }
     }
+    /* WCAG 2.5.5 — comfortable touch targets on touch-only devices. */
+    @media (hover: none) {
+      .nav-btn, .seg-btn, .chip, input[type="search"] { min-height: 40px; }
+      #btn-info { width: 40px; height: 40px; }
+      .nav-btn.icon-only { min-width: 40px; }
+      #legend-toggle-btn { width: 32px; height: 32px; }
+    }
   </style>
 </head>
 <body>
@@ -421,7 +450,7 @@
   <div class="nav-divider" aria-hidden="true"></div>
 
   <div class="brand">
-    <span class="brand-title">Mesonet Station Status</span>
+    <h1 class="brand-title">Mesonet Station Status</h1>
     <span class="brand-subtitle">A service of the Montana Climate Office</span>
   </div>
 
@@ -451,8 +480,9 @@
     </div>
 
     <div class="control-group">
+      <label class="control-label" for="search-input">Search</label>
       <input type="search" id="search-input" list="stations-list"
-             placeholder="Search stations…" aria-label="Search stations" autocomplete="off">
+             placeholder="Search stations…" autocomplete="off">
       <datalist id="stations-list"></datalist>
     </div>
 
@@ -495,10 +525,11 @@
 <div id="map-container">
   <div id="map" role="application" aria-label="Mesonet station status map"></div>
 
-  <div id="legend" aria-label="Legend">
+  <aside id="legend" aria-labelledby="legend-title">
     <div class="legend-header" id="legend-header">
-      <h4 id="legend-title">Legend</h4>
-      <button id="legend-toggle-btn" aria-label="Collapse legend" aria-expanded="true">
+      <h2 id="legend-title">Legend</h2>
+      <button id="legend-toggle-btn" aria-controls="legend-body" aria-expanded="true"
+              aria-label="Collapse legend">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
              stroke="currentColor" aria-hidden="true">
@@ -509,17 +540,18 @@
     <div id="legend-body">
       <div id="legend-rows"></div>
     </div>
-  </div>
+  </aside>
 </div>
 
 <div id="tooltip" role="tooltip"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="sr-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
 <dialog id="info-modal" aria-labelledby="info-modal-title">
   <div class="info-modal-box">
     <div class="info-modal-header">
       <div>
-        <div class="info-modal-title" id="info-modal-title">Mesonet Station Status</div>
+        <h2 class="info-modal-title" id="info-modal-title">Mesonet Station Status</h2>
         <div class="info-modal-subtitle">Live reporting status for the Montana Mesonet network</div>
       </div>
       <button class="modal-close" aria-label="Close" data-close-modal>×</button>
@@ -527,28 +559,47 @@
 
     <div class="info-section">
       <h3>What is this?</h3>
-      <p>This map shows the current reporting status of every station in the
+      <p>The live reporting state of every station in the
       <a href="https://climate.umt.edu/mesonet" target="_blank" rel="noopener">Montana Mesonet</a>
-      network — HydroMet and AgriMet sub-networks — operated by the
+      — HydroMet and AgriMet sub-networks — operated by the
       <a href="https://climate.umt.edu" target="_blank" rel="noopener">Montana Climate Office</a>.</p>
     </div>
 
     <div class="info-section">
-      <h3>Modes</h3>
+      <h3>Visualization modes</h3>
       <ul>
-        <li><strong>Status</strong> — green if the station posted a record within the last hour, red if not.</li>
-        <li><strong>Time since</strong> — choropleth dot color binned by minutes since the latest record, ceiling at &gt;24 h.</li>
+        <li><strong>Status</strong> — single threshold: dot is "fresh" if the station posted within the last hour, "stale" otherwise.</li>
+        <li><strong>Time since</strong> — five bins of minutes since the latest record, ceiling at &gt;24 h.</li>
       </ul>
+      <p style="margin-top:0.5rem">Color comes from <a href="https://www.fabiocrameri.ch/colourmaps/" target="_blank" rel="noopener">Crameri's <em>roma</em></a> scientific colour map — perceptually uniform, color-vision-deficiency safe, and ordered green = good → red = bad.</p>
     </div>
 
     <div class="info-section">
       <h3>Controls</h3>
       <ul>
-        <li><strong>Search</strong> — Type a station name or ID; pick a suggestion to fly there.</li>
-        <li><strong>Sub-network filter</strong> — Toggle HydroMet/AgriMet visibility.</li>
-        <li><strong>Co-located stations</strong> — Sites with multiple stations show a count badge; click to spider them apart.</li>
-        <li><strong>Theme</strong> — Toggle the sun/moon icon for light/dark.</li>
+        <li><strong>Mode toggle</strong> — Switch between Status and Time-since.</li>
+        <li><strong>Network chips</strong> — Toggle HydroMet / AgriMet visibility; counts show the total stations per sub-network.</li>
+        <li><strong>Labels</strong> — Show or hide station IDs next to each dot. Labels dodge each other to avoid overlap.</li>
+        <li><strong>Search</strong> — Type a station name or ID and pick a suggestion to fly there and open its popup.</li>
+        <li><strong>Zoom to extent</strong> — Snap the map back to fit Montana.</li>
+        <li><strong>Theme</strong> — Toggle light/dark.</li>
+        <li><strong>Legend</strong> — Click the chevron in the lower-left to collapse or expand.</li>
       </ul>
+    </div>
+
+    <div class="info-section">
+      <h3>Map interactions</h3>
+      <ul>
+        <li><strong>Hover a dot</strong> — Tooltip with station name, ID, last-record timestamp, and relative time (in your local timezone).</li>
+        <li><strong>Click a dot</strong> — Popup with details and links to the station dashboard + latest data.</li>
+        <li><strong>Co-located sites</strong> — When multiple stations share a location, the HydroMet station is shown with a count badge. Hover (desktop) or tap (mobile) to fan the others out as a "spider"; a second click on a foot opens that station's popup.</li>
+        <li><strong>Esc</strong> — Closes any open popup or spider.</li>
+      </ul>
+    </div>
+
+    <div class="info-section">
+      <h3>Sharable URLs</h3>
+      <p>Every piece of UI state — map center, zoom, mode, networks, labels, legend, theme, and the currently-open station — is reflected in the URL. Copy it from the address bar to share or bookmark; loading the URL restores the same view. To deep-link to a station, use <code>?station=aceabsar</code>.</p>
     </div>
 
     <div class="info-section">
@@ -557,7 +608,7 @@
         <li>Stations: <a href="https://mesonet.climate.umt.edu/api/stations/?type=json" target="_blank" rel="noopener"><code>/api/stations/</code></a></li>
         <li>Latest records: <a href="https://mesonet.climate.umt.edu/api/latest/?type=json" target="_blank" rel="noopener"><code>/api/latest/</code></a></li>
       </ul>
-      <p style="margin-top:0.5rem">Data auto-refresh every 5 minutes.</p>
+      <p style="margin-top:0.5rem">Data auto-refresh every 5 minutes; dot colors update every 30 seconds against the local clock.</p>
     </div>
   </div>
 </dialog>
@@ -585,6 +636,16 @@
   const LATEST_REFRESH_MS = 5 * 60 * 1000;
   const REPAINT_TICK_MS   =     30 * 1000;
 
+  // Spider geometry / interaction
+  const SPIDER_RADIUS_PX        = 26;     // distance from anchor to spider foot
+  const SPIDER_CLOSE_GRACE_MS   = 250;    // hover gap when cursor leaves one of the spider layers
+  const SEARCH_FLY_ZOOM         = 11;     // zoom when search/deep-link flies to a station
+  const SEARCH_FLY_SPEED        = 1.4;
+  // Label collision detection switches on at this zoom
+  const LABEL_MINZOOM           = 6;
+  // Coordinate precision for the co-location bucket key (~11 m at MT latitudes)
+  const BUCKET_PRECISION        = 4;
+
   // Time-since bins (minutes). Crameri "roma" diverging — perceptually uniform,
   // CVD-safe, with the cultural green=good→red=bad traffic-light direction.
   // Stops sampled from roma at quantiles 0.9 / 0.7 / 0.5 / 0.3 / 0.1 (reversed
@@ -600,8 +661,16 @@
   const STATUS_STALE = '#7e1900';
   const NULL_COLOR   = '#9aa3b3';
 
-  // Co-location bucket key: 4 decimals ≈ 11 m
-  const bucketKey = (lat, lon) => `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const bucketKey = (lat, lon) =>
+    `${lat.toFixed(BUCKET_PRECISION)},${lon.toFixed(BUCKET_PRECISION)}`;
+
+  // Persist a tiny piece of UI state. Same key namespace as the rest of the app.
+  function lsSet(key, value) {
+    try { localStorage.setItem(key, value); } catch {}
+  }
+
+  // Respect the user's OS-level reduced-motion preference for map animations.
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const toastEl       = document.getElementById('toast');
@@ -621,10 +690,23 @@
     _toastTimer = setTimeout(() => toastEl.classList.remove('visible'), ms);
   }
 
+  // Push a sentence to the aria-live region so screen-reader users hear
+  // "Station X opened" when a popup is shown via click, search, or deep-link.
+  const srAnnounceEl = document.getElementById('sr-announce');
+  function announcePopup(stationId) {
+    const s = stationById.get(stationId);
+    if (!s || !srAnnounceEl) return;
+    const ts = latestById.get(stationId) ?? null;
+    const when = ts == null ? 'no record' : `last reported ${relativeStamp(ts)}`;
+    srAnnounceEl.textContent = `${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}.`;
+  }
+
   // ── Theme ────────────────────────────────────────────────────────────────
   function stadiaStyleUrl() {
+    // Alidade Smooth: muted, low-saturation, low-POI cartography designed as
+    // a data-overlay canvas — lets the Crameri roma dots read as primary.
     const variant = document.documentElement.dataset.theme === 'dark'
-      ? 'stamen_toner' : 'stamen_toner_lite';
+      ? 'alidade_smooth_dark' : 'alidade_smooth';
     return `https://tiles.stadiamaps.com/styles/${variant}.json?api_key=${STADIA_API_KEY}`;
   }
   function dotStrokeColor() {
@@ -640,7 +722,7 @@
   document.getElementById('btn-theme').addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('mco-theme', next); } catch {}
+    lsSet('mco-theme', next);
     syncThemeIcons();
     map.setStyle(stadiaStyleUrl());
     map.once('style.load', () => {
@@ -653,7 +735,7 @@
   // ── Zoom to full extent ──────────────────────────────────────────────────
   document.getElementById('btn-fit').addEventListener('click', () => {
     closeSpider();
-    map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: true });
+    map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: !reduceMotion });
   });
 
   // ── Info modal ───────────────────────────────────────────────────────────
@@ -706,7 +788,6 @@
   // ── URL state ────────────────────────────────────────────────────────────
   // URL params take precedence over localStorage take precedence over defaults.
   const urlParams = new URLSearchParams(location.search);
-  const _isNum = (x) => typeof x === 'number' && !isNaN(x) && isFinite(x);
 
   let activeMode = (() => {
     const u = urlParams.get('mode');
@@ -727,7 +808,7 @@
   const _initLng    = parseFloat(urlParams.get('lng'));
   const _initLat    = parseFloat(urlParams.get('lat'));
   const _initZoom   = parseFloat(urlParams.get('zoom'));
-  const _hasInitPos = _isNum(_initLng) && _isNum(_initLat) && _isNum(_initZoom);
+  const _hasInitPos = Number.isFinite(_initLng) && Number.isFinite(_initLat) && Number.isFinite(_initZoom);
   const _initStation = urlParams.get('station') || null;
 
   let _selectedStation = _initStation;
@@ -804,7 +885,7 @@
       map.addLayer({
         id: 'stations-id-label', type: 'symbol', source: 'stations',
         filter: ['==', ['get', 'colocationIndex'], 0],
-        minzoom: 6,
+        minzoom: LABEL_MINZOOM,
         layout: stationLabelLayout(),
         paint: stationLabelPaint(),
       });
@@ -1032,7 +1113,7 @@
     for (const s of stations) {
       if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
       const k     = bucketById.get(s.station);
-      const ts    = latestById.has(s.station) ? latestById.get(s.station) : null;
+      const ts    = latestById.get(s.station) ?? null;
       const mins  = minutesSince(ts);
       features.push({
         type: 'Feature',
@@ -1084,7 +1165,7 @@
         chip.setAttribute('aria-pressed', on ? 'true' : 'false');
         if (on) activeNetworks.add(net);
         else    activeNetworks.delete(net);
-        try { localStorage.setItem('mco-status-networks', JSON.stringify([...activeNetworks])); } catch {}
+        lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
         applySubnetFilter();
         pushState();
       });
@@ -1148,14 +1229,17 @@
     if (s.sub_network && !activeNetworks.has(s.sub_network)) {
       // Re-enable its sub-network so the user can see the dot
       activeNetworks.add(s.sub_network);
-      try { localStorage.setItem('mco-status-networks', JSON.stringify([...activeNetworks])); } catch {}
+      lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
       for (const chip of subnetFiltersEl.querySelectorAll('.chip')) {
         if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
       }
       applySubnetFilter();
     }
     closeSpider();
-    map.flyTo({ center: [s.longitude, s.latitude], zoom: 11, speed: 1.4 });
+    map.flyTo({
+      center: [s.longitude, s.latitude],
+      zoom: SEARCH_FLY_ZOOM, speed: SEARCH_FLY_SPEED, animate: !reduceMotion,
+    });
     map.once('moveend', () => openPopupFor(stationId));
   }
 
@@ -1163,7 +1247,7 @@
   function popupHTML(stationId) {
     const s = stationById.get(stationId);
     if (!s) return '';
-    const ts = latestById.has(stationId) ? latestById.get(stationId) : null;
+    const ts = latestById.get(stationId) ?? null;
     const mins = minutesSince(ts);
     const status = statusBucket(mins);
     const stampAbs = ts == null ? '—' : formatStamp(ts);
@@ -1205,14 +1289,14 @@
   function openPopupFor(stationId, lngLat) {
     const s = stationById.get(stationId);
     if (!s) return;
-    if (_popup) { _popup._suppressClose = true; _popup.remove(); _popup = null; }
+    if (_popup) { _suppressNextPopupClose = true; _popup.remove(); _popup = null; }
     _selectedStation = stationId;
     const p = new maplibregl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
       .setLngLat(lngLat || [s.longitude, s.latitude])
       .setHTML(popupHTML(stationId))
       .addTo(map);
     p.on('close', () => {
-      if (p._suppressClose) return;
+      if (_suppressNextPopupClose) { _suppressNextPopupClose = false; return; }
       if (_popup === p) {
         _popup = null;
         _selectedStation = null;
@@ -1220,6 +1304,7 @@
       }
     });
     _popup = p;
+    announcePopup(stationId);
     pushState();
   }
 
@@ -1246,8 +1331,8 @@
     const anchorMeta = stationById.get(anchorId);
     const anchorLngLat = anchorLngLatHint || [anchorMeta.longitude, anchorMeta.latitude];
     const anchorPx = map.project(anchorLngLat);
-    const radius = 26;  // pixels
     const others = memberIds.filter(id => id !== anchorId);
+    const radius = SPIDER_RADIUS_PX;
     const stroke = dotStrokeColor();
 
     const feet = [];
@@ -1256,7 +1341,7 @@
       const theta = (i / others.length) * 2 * Math.PI - Math.PI / 2;  // start at top
       const px = { x: anchorPx.x + radius * Math.cos(theta), y: anchorPx.y + radius * Math.sin(theta) };
       const ll = map.unproject(px);
-      const ts = latestById.has(sid) ? latestById.get(sid) : null;
+      const ts = latestById.get(sid) ?? null;
       const mins = minutesSince(ts);
       const s = stationById.get(sid);
       feet.push({
@@ -1289,25 +1374,29 @@
     addCustomLayers();
     _fitZoom = map.cameraForBounds(MT_FIT_BOUNDS, FIT_OPTS).zoom;
     _mapReady = true;
+    // Kick off data fetch once layers exist, so rebuildSource never lands before its source.
+    loadAll();
   });
 
   map.on('zoomend', () => {
     if (_mapReady && _fitZoom !== undefined && map.getZoom() < _fitZoom) {
-      map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: true });
+      map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: !reduceMotion });
     }
   });
 
   // Reflect every pan/zoom in the URL so the view is sharable
   map.on('moveend', pushState);
 
-  // Keep spider feet anchored at constant pixel offset while the camera moves
+  // Keep spider feet anchored at constant pixel offset while the camera moves.
+  // Coalesce multiple per-frame `move` events into a single rebuild via rAF.
+  let _spiderMoveRaf = 0;
   map.on('move', () => {
-    if (_spiderBucket) rebuildSpider();
+    if (!_spiderBucket || _spiderMoveRaf) return;
+    _spiderMoveRaf = requestAnimationFrame(() => { _spiderMoveRaf = 0; rebuildSpider(); });
   });
 
   // ── URL state push ───────────────────────────────────────────────────────
   function pushState() {
-    if (!map) return;
     const params = {};
     if (activeMode !== 'status') params.mode = activeMode;
     params.net = [...activeNetworks].join(',');
@@ -1315,19 +1404,20 @@
     if (legendCollapsed) params.legend = 'collapsed';
     const theme = document.documentElement.dataset.theme;
     if (theme) params.theme = theme;
-    try {
-      const c = map.getCenter();
-      params.lng  = c.lng.toFixed(4);
-      params.lat  = c.lat.toFixed(4);
-      params.zoom = map.getZoom().toFixed(2);
-    } catch {}
+    const c = map.getCenter();
+    params.lng  = c.lng.toFixed(4);
+    params.lat  = c.lat.toFixed(4);
+    params.zoom = map.getZoom().toFixed(2);
     if (_selectedStation) params.station = _selectedStation;
     history.replaceState(null, '', `?${new URLSearchParams(params)}`);
   }
 
+  // Track whether the next Popup `close` event was triggered programmatically
+  // (so we don't pushState for an open-replace; the new popup pushes its own state).
+  let _suppressNextPopupClose = false;
   function closePopup() {
     if (!_popup) return;
-    _popup._suppressClose = true;
+    _suppressNextPopupClose = true;
     _popup.remove();
     _popup = null;
     if (_selectedStation) {
@@ -1338,7 +1428,6 @@
 
   // ── Spider close grace period (so cursor can travel from anchor to a foot) ─
   let _spiderCloseTimer = null;
-  const SPIDER_CLOSE_GRACE_MS = 250;
   function scheduleSpiderClose() {
     if (_spiderCloseTimer) clearTimeout(_spiderCloseTimer);
     _spiderCloseTimer = setTimeout(() => { _spiderCloseTimer = null; closeSpider(); }, SPIDER_CLOSE_GRACE_MS);
@@ -1388,7 +1477,7 @@
   function showTooltip(stationId, e) {
     const s = stationById.get(stationId);
     if (!s) return;
-    const ts = latestById.has(stationId) ? latestById.get(stationId) : null;
+    const ts = latestById.get(stationId) ?? null;
     const timeRow = ts == null
       ? `<span class="tooltip-time">no record</span>`
       : `<span class="tooltip-time">${escapeHTML(formatStamp(ts))}</span>` +
@@ -1449,7 +1538,7 @@
     btn.setAttribute('aria-pressed', btn.dataset.mode === activeMode ? 'true' : 'false');
     btn.addEventListener('click', () => {
       activeMode = btn.dataset.mode;
-      try { localStorage.setItem('mco-status-mode', activeMode); } catch {}
+      lsSet('mco-status-mode', activeMode);
       for (const b of document.querySelectorAll('.seg-btn[data-mode]')) {
         b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
       }
@@ -1475,15 +1564,14 @@
   labelsBtn.addEventListener('click', () => {
     labelsOn = !labelsOn;
     labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
-    try { localStorage.setItem('mco-status-labels', labelsOn ? 'on' : 'off'); } catch {}
+    lsSet('mco-status-labels', labelsOn ? 'on' : 'off');
     applyLabelsVisibility();
     pushState();
   });
 
   // ── Legend collapse/expand ───────────────────────────────────────────────
-  const legendEl       = document.getElementById('legend');
-  const legendHeaderEl = document.getElementById('legend-header');
-  const legendToggleBtn= document.getElementById('legend-toggle-btn');
+  const legendEl        = document.getElementById('legend');
+  const legendToggleBtn = document.getElementById('legend-toggle-btn');
   let legendCollapsed = (() => {
     const u = urlParams.get('legend');
     if (u === 'open' || u === 'collapsed') return u === 'collapsed';
@@ -1494,10 +1582,13 @@
     legendEl.classList.toggle('collapsed', legendCollapsed);
     legendToggleBtn.setAttribute('aria-expanded', legendCollapsed ? 'false' : 'true');
     legendToggleBtn.setAttribute('aria-label', legendCollapsed ? 'Expand legend' : 'Collapse legend');
-    try { localStorage.setItem('mco-status-legend', legendCollapsed ? 'collapsed' : 'expanded'); } catch {}
+    lsSet('mco-status-legend', legendCollapsed ? 'collapsed' : 'expanded');
   }
   setLegendCollapsed(legendCollapsed);
-  legendHeaderEl.addEventListener('click', () => {
+  // The legend's only collapse control is the actual <button> — keyboard-accessible
+  // out of the box with Enter/Space, and a single click target avoids non-button
+  // role="button" stand-ins.
+  legendToggleBtn.addEventListener('click', () => {
     setLegendCollapsed(!legendCollapsed);
     pushState();
   });
@@ -1529,12 +1620,12 @@
   }
 
   // ── Periodic ticks ───────────────────────────────────────────────────────
-  setInterval(() => { rebuildSource(); }, REPAINT_TICK_MS);   // recompute minutesSince
-  setInterval(refreshLatest, LATEST_REFRESH_MS);              // poll API
+  setInterval(rebuildSource, REPAINT_TICK_MS);   // recompute minutesSince locally
+  setInterval(refreshLatest, LATEST_REFRESH_MS); // re-poll the API
 
   // ── Boot ─────────────────────────────────────────────────────────────────
+  // The map's 'load' event drives the data fetch — see map.on('load') above.
   renderLegend();
-  loadAll();
 
 </script>
 </body>
