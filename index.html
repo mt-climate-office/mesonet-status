@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mesonet Station Status · Montana Climate Office</title>
+  <meta name="description" content="Real-time station status map for the Montana Mesonet network, by the Montana Climate Office.">
+
+  <meta property="og:type"        content="website">
+  <meta property="og:site_name"   content="Mesonet Station Status">
+  <meta property="og:title"       content="Mesonet Station Status">
+  <meta property="og:description" content="Real-time station status map for the Montana Mesonet network.">
+
+  <!-- Prevent theme flash — URL ?theme= wins, then localStorage, then OS preference -->
+  <script>
+    (function () {
+      const url = new URLSearchParams(location.search).get('theme');
+      const saved = localStorage.getItem('mco-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const t = (url === 'dark' || url === 'light') ? url
+              : (saved || (prefersDark ? 'dark' : 'light'));
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.css">
+
+  <style>
+    /* ── Theme tokens ──────────────────────────────────────────────────────── */
+    :root {
+      --bg-deep:        #161b22;
+      --bg-surface:     #1e2530;
+      --bg-raised:      #2c3545;
+      --border:         #3a4558;
+      --border-glass:   rgba(255,255,255,0.08);
+      --text-primary:   #e8ecf0;
+      --text-secondary: #c0cad6;
+      --text-muted:     #8a99b0;
+      --text-dim:       #6b7a90;
+      --accent:         #1a6faf;
+      --accent-light:   #5aaee8;
+      --accent-dk:      #114f80;
+      --accent-hover:   rgba(26,111,175,0.10);
+      --brand-gradient: linear-gradient(90deg, var(--accent-dk), var(--accent), var(--accent-light), var(--accent));
+      --glass:          rgba(30,37,48,0.82);
+      --shadow:         0 4px 24px rgba(0,0,0,0.4);
+      --transition:     0.2s cubic-bezier(0.4,0,0.2,1);
+      --radius-sm:      4px;
+      --radius-md:      8px;
+      --radius-lg:      12px;
+      --dot-stroke:     #ffffff;
+      /* Crameri "roma" diverging — perceptually uniform, CVD-safe, traffic-light cultural mapping (green=good → red=bad). */
+      --status-fresh:   #1a5253;  /* roma cool end (dark teal) */
+      --status-stale:   #7e1900;  /* roma warm end (dark red) */
+      --status-null:    #9aa3b3;
+      --bin1:           #1a5253;  /* < 1 h  — fresh */
+      --bin2:           #6fb082;
+      --bin3:           #f4d88e;
+      --bin4:           #c7894c;
+      --bin5:           #7e1900;  /* > 24 h — stale */
+    }
+    [data-theme="light"] {
+      --bg-deep:        #f0f2f5;
+      --bg-surface:     #ffffff;
+      --bg-raised:      #e8ecf0;
+      --border:         #c8cdd5;
+      --border-glass:   rgba(0,0,0,0.08);
+      --text-primary:   #1a1a2e;
+      --text-secondary: #3a3f4b;
+      --text-muted:     #5a6070;
+      --text-dim:       #7a8190;
+      --accent:         #1a6faf;
+      --accent-light:   #1563a0;
+      --accent-dk:      #0d4f7a;
+      --accent-hover:   rgba(26,111,175,0.08);
+      --brand-gradient: linear-gradient(90deg, #0a4a7a, #1266a8, #0d7fd4, #1266a8, #0a4a7a);
+      --glass:          rgba(255,255,255,0.88);
+      --shadow:         0 4px 24px rgba(0,0,0,0.1);
+      --dot-stroke:     #2a2a3a;
+    }
+
+    /* ── MapLibre control polish (matches snowpack-explorer) ─────────────── */
+    .maplibregl-ctrl-group {
+      background: var(--glass) !important;
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-md) !important;
+      box-shadow: var(--shadow) !important;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .maplibregl-ctrl-group button {
+      background: transparent !important;
+      border-color: var(--border) !important;
+      transition: background var(--transition);
+    }
+    .maplibregl-ctrl-group button:hover { background: var(--accent-hover) !important; }
+    .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter, none); }
+    :root              { --ctrl-icon-filter: invert(1); }
+    [data-theme="light"] { --ctrl-icon-filter: none; }
+    .maplibregl-ctrl-attrib {
+      background: var(--glass) !important;
+      color: var(--text-muted) !important;
+    }
+    .maplibregl-ctrl-attrib a { color: var(--text-secondary) !important; }
+    .maplibregl-ctrl-attrib button.maplibregl-ctrl-attrib-button { filter: var(--ctrl-icon-filter, none); }
+
+    /* ── Reset & base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      height: 100dvh;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      transition: background var(--transition), color var(--transition);
+    }
+    :focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+
+    /* ── Navbar ────────────────────────────────────────────────────────────── */
+    #navbar {
+      flex-shrink: 0;
+      position: relative;
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.4rem 1rem;
+      min-height: 52px;
+      background: var(--glass);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; row-gap: 0.4rem;
+      z-index: 100;
+    }
+    #navbar::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+      height: 2px; background: var(--brand-gradient); pointer-events: none;
+    }
+    .logo-link { display: flex; flex-shrink: 0; }
+    .logo-img  { width: 40px; height: 40px; border-radius: 6px; display: block; }
+    .nav-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
+    .brand { display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; line-height: 1.2; }
+    .brand-title    { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+    .brand-subtitle { font-size: 0.55rem; font-weight: 400; letter-spacing: 0.04em; font-style: italic; color: var(--text-dim); white-space: nowrap; }
+
+    .controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.3rem; margin-right: auto; }
+    .control-group { display: flex; align-items: center; gap: 0.4rem; }
+    .control-label {
+      font-size: 0.7rem; font-weight: 500; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
+    }
+    .nav-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+
+    .nav-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 12px; min-height: 34px;
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      background: none; color: var(--text-secondary);
+      cursor: pointer; font-size: 0.78rem; font-weight: 500;
+      font-family: inherit; white-space: nowrap; flex-shrink: 0;
+      transition: var(--transition);
+    }
+    .nav-btn:hover { background: var(--accent-hover); border-color: var(--accent); color: var(--text-primary); }
+    .nav-btn svg { flex-shrink: 0; stroke: currentColor; }
+    .nav-btn.icon-only { padding: 0.4rem; min-width: 34px; justify-content: center; }
+    .nav-btn[aria-pressed="true"] { background: var(--accent-hover); border-color: var(--accent); color: var(--text-primary); }
+
+    #btn-info {
+      border-radius: 50%; border-color: var(--accent);
+      color: var(--accent-light); font-size: 1rem; font-weight: 600;
+      padding: 0; width: 34px; height: 34px; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #btn-info:hover { background: var(--accent); color: #fff; }
+
+    .seg-btns { display: flex; gap: 0; }
+    .seg-btn {
+      padding: 4px 10px; min-height: 30px; height: 30px;
+      border-radius: 0; border-right-width: 0;
+      font-size: 0.74rem; font-weight: 600;
+    }
+    .seg-btn:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
+    .seg-btn:last-child  { border-radius: 0 var(--radius-md) var(--radius-md) 0; border-right-width: 1px; }
+    .seg-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-light); color: #fff; }
+
+    .refresh-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.66rem; color: var(--text-muted);
+      padding: 4px 8px; border: 1px solid var(--border-glass);
+      border-radius: 999px;
+    }
+    .refresh-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-light); }
+
+    /* ── Map ───────────────────────────────────────────────────────────────── */
+    #map-container { flex: 1; min-height: 0; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Search input (lives in navbar) ───────────────────────────────────── */
+    input[type="search"] {
+      background: none; color: var(--text-primary);
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 0 9px; height: 30px;
+      width: 180px; max-width: 100%;
+      font-size: 0.78rem; font-family: inherit;
+      transition: var(--transition);
+    }
+    input[type="search"]:hover { border-color: var(--accent); background: var(--accent-hover); }
+    input[type="search"]:focus { border-color: var(--accent-light); background: var(--accent-hover); outline: none; width: 220px; }
+    input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
+
+    /* ── Sub-network chips (navbar toggles) ───────────────────────────────── */
+    .chip-group { display: flex; gap: 4px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 30px; padding: 0 9px;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: none; color: var(--text-secondary);
+      font: inherit; font-size: 0.72rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: var(--transition);
+    }
+    .chip:hover { border-color: var(--accent); color: var(--text-primary); background: var(--accent-hover); }
+    .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-light); color: #fff; }
+    .chip .chip-count {
+      font-family: 'Space Mono', monospace; font-size: 0.65rem;
+      padding: 1px 5px; border-radius: 999px;
+      background: var(--border-glass); color: inherit;
+    }
+
+    /* ── Legend (bottom-left, collapsible) ────────────────────────────────── */
+    #legend {
+      position: absolute;
+      bottom: max(36px, calc(12px + env(safe-area-inset-bottom)));
+      left: 12px;
+      z-index: 10;
+      min-width: 180px;
+      background: var(--glass);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow);
+      padding: 8px 10px 8px;
+      transition: padding 0.2s cubic-bezier(0.4,0,0.2,1);
+    }
+    #legend.collapsed { padding: 6px 10px; min-width: 0; }
+    #legend.collapsed #legend-body { max-height: 0; opacity: 0; margin-top: 0; }
+    .legend-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; cursor: pointer; user-select: none;
+    }
+    #legend-title {
+      font-size: 0.82rem; font-weight: 600; color: var(--text-primary); margin: 0;
+      white-space: nowrap;
+    }
+    #legend-toggle-btn {
+      background: none; border: none; padding: 0; flex-shrink: 0;
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-dim);
+      transition: color var(--transition), transform var(--transition);
+    }
+    #legend-toggle-btn:hover { color: var(--accent-light); }
+    #legend.collapsed #legend-toggle-btn { transform: rotate(180deg); }
+    #legend-body {
+      overflow: hidden;
+      max-height: 500px; opacity: 1; margin-top: 6px;
+      transition: max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, margin-top 0.2s ease;
+    }
+    .legend-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+    .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid var(--border-glass); }
+    .legend-lbl { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; }
+
+    /* ── Popup ─────────────────────────────────────────────────────────────── */
+    .maplibregl-popup { max-width: 320px !important; }
+    .maplibregl-popup-content {
+      background: var(--bg-surface) !important;
+      color: var(--text-primary) !important;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md) !important;
+      padding: 12px 14px 12px !important;
+      box-shadow: var(--shadow) !important;
+      font-family: 'Outfit', sans-serif;
+    }
+    .maplibregl-popup-tip { border-top-color: var(--bg-surface) !important; border-bottom-color: var(--bg-surface) !important; }
+    .maplibregl-popup-close-button {
+      color: var(--text-muted) !important;
+      font-size: 1.1rem !important; padding: 2px 6px !important;
+    }
+    .pop-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); line-height: 1.2; padding-right: 18px; }
+    .pop-sub   { font-size: 0.7rem; color: var(--text-muted); font-family: 'Space Mono', monospace; margin-top: 2px; }
+    .pop-badge {
+      display: inline-block; font-size: 0.62rem; font-weight: 600;
+      padding: 2px 6px; border-radius: 999px;
+      background: var(--accent-hover); border: 1px solid var(--accent);
+      color: var(--accent-light); text-transform: uppercase; letter-spacing: 0.05em;
+      margin-right: 4px;
+    }
+    .pop-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px; line-height: 1.5; }
+    .pop-meta strong { color: var(--text-primary); font-weight: 500; }
+    .pop-stamp {
+      margin-top: 8px; padding: 6px 8px;
+      background: var(--bg-raised); border-radius: var(--radius-sm);
+      font-family: 'Space Mono', monospace; font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+    .pop-pill {
+      display: inline-block; font-size: 0.66rem; font-weight: 600;
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px; color: #fff;
+    }
+    .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
+    .pop-pill.stale { background: var(--status-stale); color: #fff; }
+    .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
+    .pop-links { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .pop-links a {
+      font-size: 0.78rem; color: var(--accent-light); text-decoration: none;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .pop-links a:hover { text-decoration: underline; }
+
+    /* ── Tooltip ───────────────────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed;
+      background: var(--glass);
+      border: 1px solid var(--accent-light);
+      border-radius: 5px;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.75rem; font-weight: 500;
+      color: var(--text-primary);
+      pointer-events: none;
+      z-index: 50;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.1s;
+      backdrop-filter: blur(8px);
+    }
+    #tooltip.visible { opacity: 1; }
+    #tooltip .tooltip-name { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); line-height: 1.2; }
+    #tooltip .tooltip-sub {
+      display: block;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+    #tooltip .tooltip-time {
+      display: block;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.66rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    #tooltip .tooltip-rel {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--accent-light);
+      font-weight: 500;
+      margin-top: 1px;
+    }
+
+    /* ── Toast ─────────────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%) translateY(0.75rem);
+      background: var(--bg-surface);
+      border: 1px solid var(--accent-light);
+      border-radius: 6px; padding: 0.5rem 1rem;
+      font-size: 0.82rem; color: var(--text-primary);
+      opacity: 0; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none; z-index: 400;
+      box-shadow: var(--shadow);
+    }
+    #toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Info modal ────────────────────────────────────────────────────────── */
+    #info-modal { background: transparent; border: none; padding: 1rem; position: fixed; inset: 0; margin: auto; width: fit-content; height: fit-content; max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); }
+    #info-modal::backdrop { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+    .info-modal-box {
+      background: var(--bg-surface); border: 1px solid var(--border);
+      border-radius: 10px; width: min(540px, calc(100vw - 4rem));
+      max-height: calc(100dvh - 4rem); overflow-y: auto;
+      padding: 1.5rem; box-shadow: var(--shadow);
+    }
+    .info-modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; gap: 1rem; }
+    .info-modal-title    { font-size: 1.05rem; font-weight: 700; color: var(--accent-light); }
+    .info-modal-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .modal-close { display: flex; align-items: center; justify-content: center; background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; line-height: 1; flex-shrink: 0; min-width: 34px; min-height: 34px; transition: var(--transition); }
+    .modal-close:hover { color: var(--text-primary); border-color: var(--accent-light); }
+    .info-section { margin-bottom: 1.25rem; }
+    .info-section:last-child { margin-bottom: 0; }
+    .info-section h3 { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.5rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+    .info-section p, .info-section ul { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
+    .info-section ul { padding-left: 1.1rem; }
+    .info-section li { margin-bottom: 0.2rem; }
+    .info-section a { color: var(--accent-light); text-decoration: none; }
+    .info-section a:hover { text-decoration: underline; }
+
+    /* ── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 1400px) { .control-label { display: none; } .btn-label { display: none; } }
+    @media (max-width: 1060px) {
+      .brand, .nav-divider { display: none; }
+      #navbar { padding-left: 0.6rem; padding-right: 0.6rem; gap: 0.4rem; }
+      .nav-actions { gap: 0.2rem; }
+    }
+    @media (max-width: 640px) {
+      input[type="search"] { width: 140px; }
+      input[type="search"]:focus { width: 160px; }
+    }
+  </style>
+</head>
+<body>
+
+<header id="navbar">
+  <a href="https://climate.umt.edu" target="_blank" rel="noopener noreferrer"
+     class="logo-link" aria-label="Montana Climate Office">
+    <img src="https://climate.umt.edu/assets/images/MCO_logo_icon_only.png" alt="" class="logo-img">
+  </a>
+
+  <div class="nav-divider" aria-hidden="true"></div>
+
+  <div class="brand">
+    <span class="brand-title">Mesonet Station Status</span>
+    <span class="brand-subtitle">A service of the Montana Climate Office</span>
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <span class="control-label">Mode</span>
+      <div class="seg-btns" role="group" aria-label="Visualization mode">
+        <button class="nav-btn seg-btn" data-mode="status"     aria-pressed="true">Status</button>
+        <button class="nav-btn seg-btn" data-mode="timesince"  aria-pressed="false">Time since</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label">Networks</span>
+      <div class="chip-group" id="subnet-filters" role="group" aria-label="Sub-network filter"></div>
+    </div>
+
+    <div class="control-group">
+      <button class="nav-btn" id="btn-labels" aria-pressed="false" title="Toggle station ID labels">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+          <line x1="7" y1="7" x2="7.01" y2="7"/>
+        </svg>
+        <span class="btn-label">Labels</span>
+      </button>
+    </div>
+
+    <div class="control-group">
+      <input type="search" id="search-input" list="stations-list"
+             placeholder="Search stations…" aria-label="Search stations" autocomplete="off">
+      <datalist id="stations-list"></datalist>
+    </div>
+
+    <div class="refresh-pill" title="Last refreshed">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="refresh-stamp">loading…</span>
+    </div>
+  </div>
+
+  <div class="nav-actions">
+    <button class="nav-btn icon-only" id="btn-fit" title="Zoom to full extent" aria-label="Zoom to full extent">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="4 8 4 4 8 4"/>
+        <polyline points="20 8 20 4 16 4"/>
+        <polyline points="4 16 4 20 8 20"/>
+        <polyline points="20 16 20 20 16 20"/>
+      </svg>
+    </button>
+    <button class="nav-btn icon-only" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
+      <svg id="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <svg id="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1"  x2="12" y2="3"/>  <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>   <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </button>
+    <button class="nav-btn" id="btn-info" aria-label="About this map">?</button>
+  </div>
+</header>
+
+<div id="map-container">
+  <div id="map" role="application" aria-label="Mesonet station status map"></div>
+
+  <div id="legend" aria-label="Legend">
+    <div class="legend-header" id="legend-header">
+      <h4 id="legend-title">Legend</h4>
+      <button id="legend-toggle-btn" aria-label="Collapse legend" aria-expanded="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+             stroke="currentColor" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+    </div>
+    <div id="legend-body">
+      <div id="legend-rows"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" role="tooltip"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="info-modal" aria-labelledby="info-modal-title">
+  <div class="info-modal-box">
+    <div class="info-modal-header">
+      <div>
+        <div class="info-modal-title" id="info-modal-title">Mesonet Station Status</div>
+        <div class="info-modal-subtitle">Live reporting status for the Montana Mesonet network</div>
+      </div>
+      <button class="modal-close" aria-label="Close" data-close-modal>×</button>
+    </div>
+
+    <div class="info-section">
+      <h3>What is this?</h3>
+      <p>This map shows the current reporting status of every station in the
+      <a href="https://climate.umt.edu/mesonet" target="_blank" rel="noopener">Montana Mesonet</a>
+      network — HydroMet and AgriMet sub-networks — operated by the
+      <a href="https://climate.umt.edu" target="_blank" rel="noopener">Montana Climate Office</a>.</p>
+    </div>
+
+    <div class="info-section">
+      <h3>Modes</h3>
+      <ul>
+        <li><strong>Status</strong> — green if the station posted a record within the last hour, red if not.</li>
+        <li><strong>Time since</strong> — choropleth dot color binned by minutes since the latest record, ceiling at &gt;24 h.</li>
+      </ul>
+    </div>
+
+    <div class="info-section">
+      <h3>Controls</h3>
+      <ul>
+        <li><strong>Search</strong> — Type a station name or ID; pick a suggestion to fly there.</li>
+        <li><strong>Sub-network filter</strong> — Toggle HydroMet/AgriMet visibility.</li>
+        <li><strong>Co-located stations</strong> — Sites with multiple stations show a count badge; click to spider them apart.</li>
+        <li><strong>Theme</strong> — Toggle the sun/moon icon for light/dark.</li>
+      </ul>
+    </div>
+
+    <div class="info-section">
+      <h3>Data sources</h3>
+      <ul>
+        <li>Stations: <a href="https://mesonet.climate.umt.edu/api/stations/?type=json" target="_blank" rel="noopener"><code>/api/stations/</code></a></li>
+        <li>Latest records: <a href="https://mesonet.climate.umt.edu/api/latest/?type=json" target="_blank" rel="noopener"><code>/api/latest/</code></a></li>
+      </ul>
+      <p style="margin-top:0.5rem">Data auto-refresh every 5 minutes.</p>
+    </div>
+  </div>
+</dialog>
+
+<!-- MapLibre -->
+<script src="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.js"></script>
+
+<script type="module">
+  'use strict';
+
+  // ── Constants ────────────────────────────────────────────────────────────
+  const STADIA_API_KEY  = 'ad892279-b205-49ef-88fc-f413b876a985';
+  const STATIONS_URL    = 'https://mesonet.climate.umt.edu/api/stations/?type=json';
+  const LATEST_URL      = 'https://mesonet.climate.umt.edu/api/latest/?type=json';
+  const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
+  const LATEST_FOR_URL  = (s) => `https://mesonet.climate.umt.edu/api/latest/?stations=${encodeURIComponent(s)}`;
+
+  // Initial fit (a touch padded around Montana's actual extent)
+  const MT_FIT_BOUNDS = [[-116.10, 44.30], [-104.00, 49.05]];   // [SW, NE]
+  // Pan-clamp slightly wider so the user can see Montana's edges
+  const MT_MAX_BOUNDS = [[-117.50, 43.20], [-102.50, 50.20]];
+  const FIT_OPTS      = { padding: 24, animate: false };
+
+  // Auto-refresh latest records every 5 min; refresh "minutes since" colors every 30 s
+  const LATEST_REFRESH_MS = 5 * 60 * 1000;
+  const REPAINT_TICK_MS   =     30 * 1000;
+
+  // Time-since bins (minutes). Crameri "roma" diverging — perceptually uniform,
+  // CVD-safe, with the cultural green=good→red=bad traffic-light direction.
+  // Stops sampled from roma at quantiles 0.9 / 0.7 / 0.5 / 0.3 / 0.1 (reversed
+  // so low value = cool/teal/fresh, high value = warm/red/stale).
+  const TIME_BINS = [
+    { max:   60, color: '#1a5253', label: '< 1 h'  },
+    { max:  180, color: '#6fb082', label: '1–3 h'  },
+    { max:  360, color: '#f4d88e', label: '3–6 h'  },
+    { max: 1440, color: '#c7894c', label: '6–24 h' },
+    { max: Infinity, color: '#7e1900', label: '> 24 h' },
+  ];
+  const STATUS_FRESH = '#1a5253';
+  const STATUS_STALE = '#7e1900';
+  const NULL_COLOR   = '#9aa3b3';
+
+  // Co-location bucket key: 4 decimals ≈ 11 m
+  const bucketKey = (lat, lon) => `${lat.toFixed(4)},${lon.toFixed(4)}`;
+
+  // ── DOM refs ─────────────────────────────────────────────────────────────
+  const toastEl       = document.getElementById('toast');
+  const refreshStampEl= document.getElementById('refresh-stamp');
+  const subnetFiltersEl = document.getElementById('subnet-filters');
+  const legendRowsEl  = document.getElementById('legend-rows');
+  const legendTitleEl = document.getElementById('legend-title');
+  const searchInput   = document.getElementById('search-input');
+  const stationsList  = document.getElementById('stations-list');
+  const infoModal     = document.getElementById('info-modal');
+
+  let _toastTimer;
+  function showToast(msg, ms = 2800) {
+    clearTimeout(_toastTimer);
+    toastEl.textContent = msg;
+    toastEl.classList.add('visible');
+    _toastTimer = setTimeout(() => toastEl.classList.remove('visible'), ms);
+  }
+
+  // ── Theme ────────────────────────────────────────────────────────────────
+  function stadiaStyleUrl() {
+    const variant = document.documentElement.dataset.theme === 'dark'
+      ? 'stamen_toner' : 'stamen_toner_lite';
+    return `https://tiles.stadiamaps.com/styles/${variant}.json?api_key=${STADIA_API_KEY}`;
+  }
+  function dotStrokeColor() {
+    return document.documentElement.dataset.theme === 'dark' ? '#ffffff' : '#2a2a3a';
+  }
+  function syncThemeIcons() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    document.getElementById('icon-moon').style.display = dark ? 'none' : '';
+    document.getElementById('icon-sun') .style.display = dark ? ''     : 'none';
+  }
+  syncThemeIcons();
+
+  document.getElementById('btn-theme').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('mco-theme', next); } catch {}
+    syncThemeIcons();
+    map.setStyle(stadiaStyleUrl());
+    map.once('style.load', () => {
+      addCustomLayers();   // re-add — setStyle wipes our sources/layers
+      rebuildSource();     // repopulate the now-empty stations source
+    });
+    pushState();
+  });
+
+  // ── Zoom to full extent ──────────────────────────────────────────────────
+  document.getElementById('btn-fit').addEventListener('click', () => {
+    closeSpider();
+    map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: true });
+  });
+
+  // ── Info modal ───────────────────────────────────────────────────────────
+  document.getElementById('btn-info').addEventListener('click', () => infoModal.showModal());
+  infoModal.addEventListener('click', (e) => {
+    if (e.target === infoModal || e.target.dataset.closeModal !== undefined) infoModal.close();
+  });
+
+  // ── Time helpers ─────────────────────────────────────────────────────────
+  function minutesSince(ts) {
+    if (ts == null) return null;
+    return Math.max(0, (Date.now() - ts) / 60000);
+  }
+  function formatStamp(ms) {
+    return new Date(ms).toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    });
+  }
+  function relativeStamp(ms) {
+    if (ms == null) return 'no record';
+    const m = (Date.now() - ms) / 60000;
+    if (m < 1)   return 'just now';
+    if (m < 60)  return `${Math.round(m)} min ago`;
+    if (m < 60*24) {
+      const h = m / 60;
+      return `${h < 10 ? h.toFixed(1) : Math.round(h)} h ago`;
+    }
+    const d = m / 60 / 24;
+    return `${d < 10 ? d.toFixed(1) : Math.round(d)} days ago`;
+  }
+  function statusBucket(minSince) {
+    if (minSince == null) return 'null';
+    return minSince < 60 ? 'fresh' : 'stale';
+  }
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let stations    = [];                       // raw /api/stations response
+  let latestById  = new Map();                // station id → datetime ms
+  let stationById = new Map();                // station id → meta object
+  let bucketById  = new Map();                // station id → bucket key
+  let bucketSize  = new Map();                // bucket key → count
+  let bucketIndex = new Map();                // station id → index within bucket (0..n-1)
+  let bucketAnchor= new Map();                // bucket key → anchor station id
+  let _spiderBucket = null;                   // bucket key currently spidered, or null
+  let _popup = null;
+  let _mapReady = false;
+  let _fitZoom;
+
+  // ── URL state ────────────────────────────────────────────────────────────
+  // URL params take precedence over localStorage take precedence over defaults.
+  const urlParams = new URLSearchParams(location.search);
+  const _isNum = (x) => typeof x === 'number' && !isNaN(x) && isFinite(x);
+
+  let activeMode = (() => {
+    const u = urlParams.get('mode');
+    if (u === 'status' || u === 'timesince') return u;
+    return localStorage.getItem('mco-status-mode') === 'timesince' ? 'timesince' : 'status';
+  })();
+
+  let activeNetworks = (() => {
+    const u = urlParams.get('net');
+    if (u !== null) return new Set(u.split(',').filter(Boolean));
+    try {
+      const saved = JSON.parse(localStorage.getItem('mco-status-networks') || 'null');
+      if (Array.isArray(saved)) return new Set(saved);
+    } catch {}
+    return new Set();
+  })();
+
+  const _initLng    = parseFloat(urlParams.get('lng'));
+  const _initLat    = parseFloat(urlParams.get('lat'));
+  const _initZoom   = parseFloat(urlParams.get('zoom'));
+  const _hasInitPos = _isNum(_initLng) && _isNum(_initLat) && _isNum(_initZoom);
+  const _initStation = urlParams.get('station') || null;
+
+  let _selectedStation = _initStation;
+
+  // ── Map init ─────────────────────────────────────────────────────────────
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: stadiaStyleUrl(),
+    ...(_hasInitPos
+      ? { center: [_initLng, _initLat], zoom: _initZoom }
+      : { bounds: MT_FIT_BOUNDS, fitBoundsOptions: FIT_OPTS }),
+    maxBounds: MT_MAX_BOUNDS,
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  function addCustomLayers() {
+    // Hide all label/symbol layers from the basemap that overlap our station dots —
+    // actually we keep them for context.
+    if (!map.getSource('stations')) {
+      map.addSource('stations', { type: 'geojson', data: emptyFC() });
+    }
+    if (!map.getSource('spider')) {
+      map.addSource('spider', { type: 'geojson', data: emptyFC() });
+    }
+    if (!map.getSource('spider-lines')) {
+      map.addSource('spider-lines', { type: 'geojson', data: emptyFC() });
+    }
+
+    if (!map.getLayer('spider-lines-layer')) {
+      map.addLayer({
+        id: 'spider-lines-layer', type: 'line', source: 'spider-lines',
+        paint: {
+          'line-color': ['get', '_strokeColor'],
+          'line-width': 1.2,
+          'line-opacity': 0.65,
+        },
+      });
+    }
+
+    if (!map.getLayer('stations-layer')) {
+      map.addLayer({
+        id: 'stations-layer', type: 'circle', source: 'stations',
+        // Only render the anchor of each bucket; spider feet come from 'spider' source
+        filter: ['==', ['get', 'colocationIndex'], 0],
+        paint: stationPaint(),
+      });
+    }
+
+    if (!map.getLayer('stations-badge')) {
+      map.addLayer({
+        id: 'stations-badge', type: 'symbol', source: 'stations',
+        filter: ['all',
+          ['==', ['get', 'colocationIndex'], 0],
+          ['>',  ['get', 'colocationCount'], 1],
+        ],
+        layout: {
+          'text-field': ['to-string', ['get', 'colocationCount']],
+          'text-font':  ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size':  10,
+          'text-offset': [0, -1.05],
+          'text-anchor': 'bottom',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#1a1a2e',
+          'text-halo-width': 1.2,
+        },
+      });
+    }
+
+    if (!map.getLayer('stations-id-label')) {
+      map.addLayer({
+        id: 'stations-id-label', type: 'symbol', source: 'stations',
+        filter: ['==', ['get', 'colocationIndex'], 0],
+        minzoom: 6,
+        layout: stationLabelLayout(),
+        paint: stationLabelPaint(),
+      });
+    }
+
+    if (!map.getLayer('spider-layer')) {
+      map.addLayer({
+        id: 'spider-layer', type: 'circle', source: 'spider',
+        paint: stationPaint(),
+      });
+    }
+
+    if (!map.getLayer('spider-id-label')) {
+      map.addLayer({
+        id: 'spider-id-label', type: 'symbol', source: 'spider',
+        layout: stationLabelLayout(),
+        paint: stationLabelPaint(),
+      });
+    }
+
+    applySubnetFilter();
+    refreshDotColors();
+    applyLabelsVisibility();
+  }
+
+  function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
+
+  // ── Paint expression generators ──────────────────────────────────────────
+  function paintColorForMode(mode) {
+    if (mode === 'status') {
+      return ['case',
+        ['==', ['get', 'minutesSince'], null], NULL_COLOR,
+        ['<',  ['get', 'minutesSince'], 60],   STATUS_FRESH,
+        STATUS_STALE,
+      ];
+    }
+    // time-since 5-bin step
+    return ['case',
+      ['==', ['get', 'minutesSince'], null], NULL_COLOR,
+      ['step', ['get', 'minutesSince'],
+        TIME_BINS[0].color,                     // < 60
+        TIME_BINS[0].max, TIME_BINS[1].color,   // 60+
+        TIME_BINS[1].max, TIME_BINS[2].color,   // 180+
+        TIME_BINS[2].max, TIME_BINS[3].color,   // 360+
+        TIME_BINS[3].max, TIME_BINS[4].color,   // 1440+
+      ],
+    ];
+  }
+
+  function stationPaint() {
+    return {
+      'circle-radius': [
+        'interpolate', ['linear'], ['zoom'],
+        4,  3.5,
+        7,  5,
+        10, 7,
+        14, 9,
+      ],
+      'circle-color': paintColorForMode(activeMode),
+      'circle-stroke-color': dotStrokeColor(),
+      'circle-stroke-width': 1.2,
+      'circle-opacity': 0.95,
+    };
+  }
+
+  function stationLabelLayout() {
+    return {
+      'text-field': ['get', 'station'],
+      'text-font':  ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size':  [
+        'interpolate', ['linear'], ['zoom'],
+        6,  9,
+        10, 11,
+        14, 12,
+      ],
+      // Try anchor positions in order until one fits without colliding.
+      'text-variable-anchor': ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'],
+      'text-radial-offset': 0.9,
+      'text-justify': 'auto',
+      'text-padding': 2,
+      'text-allow-overlap': false,
+      'text-ignore-placement': false,
+      'text-optional': true,    // hide rather than show colliding labels
+    };
+  }
+  function stationLabelPaint() {
+    const dark = document.documentElement.dataset.theme !== 'light';
+    return {
+      'text-color':      dark ? '#e8ecf0' : '#1a1a2e',
+      'text-halo-color': dark ? '#161b22' : '#ffffff',
+      'text-halo-width': 1.4,
+      'text-halo-blur':  0.4,
+    };
+  }
+  function refreshLabelPaint() {
+    if (!map.getLayer('stations-id-label')) return;
+    const p = stationLabelPaint();
+    for (const lid of ['stations-id-label', 'spider-id-label']) {
+      if (!map.getLayer(lid)) continue;
+      map.setPaintProperty(lid, 'text-color',      p['text-color']);
+      map.setPaintProperty(lid, 'text-halo-color', p['text-halo-color']);
+    }
+  }
+
+  function refreshDotColors() {
+    if (!map.getLayer('stations-layer')) return;
+    const color = paintColorForMode(activeMode);
+    const stroke = dotStrokeColor();
+    for (const lid of ['stations-layer', 'spider-layer']) {
+      map.setPaintProperty(lid, 'circle-color', color);
+      map.setPaintProperty(lid, 'circle-stroke-color', stroke);
+    }
+    refreshLabelPaint();
+    // Spider connector line color also follows theme
+    if (map.getLayer('spider-lines-layer')) {
+      // _strokeColor is per-feature; refresh source data so the new color is baked in
+      rebuildSpider();
+    }
+    renderLegend();
+  }
+
+  // ── Data fetch ───────────────────────────────────────────────────────────
+  async function loadAll() {
+    try {
+      const [stRes, ltRes] = await Promise.all([
+        fetch(STATIONS_URL, { cache: 'no-store' }),
+        fetch(LATEST_URL,   { cache: 'no-store' }),
+      ]);
+      if (!stRes.ok) throw new Error(`stations fetch failed (${stRes.status})`);
+      if (!ltRes.ok) throw new Error(`latest fetch failed (${ltRes.status})`);
+      stations = await stRes.json();
+      const latest = await ltRes.json();
+      latestById = new Map(latest.map(r => [r.station, r.datetime]));
+      indexStations();
+      buildFilterUI();
+      populateSearch();
+      rebuildSource();
+      applySubnetFilter();   // re-apply now that activeNetworks is populated
+      refreshStamp();
+      // Deep-link from ?station=… in URL
+      if (_initStation && stationById.has(_initStation)) {
+        const openIt = () => {
+          const s = stationById.get(_initStation);
+          if (_hasInitPos) openPopupFor(_initStation, [s.longitude, s.latitude]);
+          else             flyToAndOpen(_initStation);
+        };
+        if (_mapReady) openIt();
+        else map.once('idle', openIt);
+      } else {
+        // Push initial URL so it's clean even if the user hasn't interacted yet
+        pushState();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast(`Error loading data: ${err.message}`);
+    }
+  }
+
+  async function refreshLatest() {
+    try {
+      const res = await fetch(LATEST_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`latest fetch failed (${res.status})`);
+      const latest = await res.json();
+      latestById = new Map(latest.map(r => [r.station, r.datetime]));
+      rebuildSource();
+      refreshStamp();
+    } catch (err) {
+      console.error(err);
+      showToast(`Refresh failed: ${err.message}`);
+    }
+  }
+
+  function refreshStamp() {
+    const now = new Date();
+    refreshStampEl.textContent =
+      `refreshed ${now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function indexStations() {
+    stationById.clear();
+    bucketById.clear();
+    bucketSize.clear();
+    bucketIndex.clear();
+    bucketAnchor.clear();
+
+    // Sort so the anchor of a co-located bucket is the HydroMet station when one exists.
+    // Network priority: HydroMet < AgriMet < other; tiebreak by station id.
+    const netRank = (s) => s === 'HydroMet' ? 0 : s === 'AgriMet' ? 1 : 99;
+    const sorted = [...stations].sort((a, b) => {
+      const d = netRank(a.sub_network) - netRank(b.sub_network);
+      return d !== 0 ? d : a.station.localeCompare(b.station);
+    });
+
+    // Build buckets
+    const bucketMembers = new Map();
+    for (const s of sorted) {
+      if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
+      stationById.set(s.station, s);
+      const k = bucketKey(s.latitude, s.longitude);
+      bucketById.set(s.station, k);
+      const arr = bucketMembers.get(k) || [];
+      arr.push(s.station);
+      bucketMembers.set(k, arr);
+    }
+    for (const [k, members] of bucketMembers) {
+      bucketSize.set(k, members.length);
+      bucketAnchor.set(k, members[0]);
+      members.forEach((sid, i) => bucketIndex.set(sid, i));
+    }
+
+    // Initialize sub-network filter set if empty
+    const allNetworks = new Set(stations.map(s => s.sub_network).filter(Boolean));
+    if (activeNetworks.size === 0) {
+      activeNetworks = new Set(allNetworks);
+    } else {
+      // prune any stale values
+      for (const n of [...activeNetworks]) if (!allNetworks.has(n)) activeNetworks.delete(n);
+      if (activeNetworks.size === 0) activeNetworks = new Set(allNetworks);
+    }
+  }
+
+  function rebuildSource() {
+    if (!map.getSource('stations')) return;
+    const features = [];
+    for (const s of stations) {
+      if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
+      const k     = bucketById.get(s.station);
+      const ts    = latestById.has(s.station) ? latestById.get(s.station) : null;
+      const mins  = minutesSince(ts);
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+        properties: {
+          station:         s.station,
+          name:            s.name,
+          sub_network:     s.sub_network,
+          datetime:        ts,
+          minutesSince:    mins,
+          staleStatus:     statusBucket(mins),
+          colocationCount: bucketSize.get(k)   || 1,
+          colocationIndex: bucketIndex.get(s.station) || 0,
+          bucket:          k,
+        },
+      });
+    }
+    map.getSource('stations').setData({ type: 'FeatureCollection', features });
+
+    // If a spider is open, refresh its feet too
+    if (_spiderBucket) rebuildSpider();
+  }
+
+  // ── Sub-network filter UI (chip toggles in navbar) ───────────────────────
+  function buildFilterUI() {
+    const allNetworks = [...new Set(stations.map(s => s.sub_network).filter(Boolean))].sort();
+    const byNet = {};
+    for (const s of stations) {
+      if (!s.sub_network) continue;
+      byNet[s.sub_network] = (byNet[s.sub_network] || 0) + 1;
+    }
+    subnetFiltersEl.innerHTML = '';
+    for (const net of allNetworks) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.dataset.network = net;
+      chip.setAttribute('aria-pressed', activeNetworks.has(net) ? 'true' : 'false');
+      const lbl = document.createElement('span');
+      lbl.textContent = net;
+      const count = document.createElement('span');
+      count.className = 'chip-count';
+      count.dataset.network = net;
+      count.textContent = String(byNet[net] || 0);
+      chip.appendChild(lbl);
+      chip.appendChild(count);
+      chip.addEventListener('click', () => {
+        const on = chip.getAttribute('aria-pressed') !== 'true';
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        if (on) activeNetworks.add(net);
+        else    activeNetworks.delete(net);
+        try { localStorage.setItem('mco-status-networks', JSON.stringify([...activeNetworks])); } catch {}
+        applySubnetFilter();
+        pushState();
+      });
+      subnetFiltersEl.appendChild(chip);
+    }
+  }
+  function applySubnetFilter() {
+    if (!map.getLayer('stations-layer')) return;
+    const wanted = ['literal', [...activeNetworks]];
+    const subnetMatch = ['in', ['get', 'sub_network'], wanted];
+
+    map.setFilter('stations-layer',
+      ['all', ['==', ['get', 'colocationIndex'], 0], subnetMatch]);
+    map.setFilter('stations-badge',
+      ['all', ['==', ['get', 'colocationIndex'], 0], ['>', ['get', 'colocationCount'], 1], subnetMatch]);
+    if (map.getLayer('stations-id-label')) {
+      map.setFilter('stations-id-label',
+        ['all', ['==', ['get', 'colocationIndex'], 0], subnetMatch]);
+    }
+    map.setFilter('spider-layer', subnetMatch);
+    if (map.getLayer('spider-id-label')) {
+      map.setFilter('spider-id-label', subnetMatch);
+    }
+  }
+
+  // ── Search (datalist + flyTo + popup) ────────────────────────────────────
+  function populateSearch() {
+    stationsList.innerHTML = '';
+    const sorted = [...stations].sort((a, b) => a.name.localeCompare(b.name));
+    for (const s of sorted) {
+      const opt = document.createElement('option');
+      opt.value = `${s.name} (${s.station}) — ${s.sub_network || '—'}`;
+      stationsList.appendChild(opt);
+    }
+  }
+  searchInput.addEventListener('change', () => {
+    const v = searchInput.value;
+    // Try to extract "(stationid)" from the chosen suggestion
+    const m = v.match(/\(([^)]+)\)/);
+    let id = m ? m[1].trim() : null;
+    if (!id) {
+      // Free-form fallback — case-insensitive name or id substring
+      const q = v.trim().toLowerCase();
+      if (!q) return;
+      const hit = stations.find(s =>
+        s.station.toLowerCase() === q ||
+        s.name.toLowerCase()    === q ||
+        s.name.toLowerCase().includes(q) ||
+        s.station.toLowerCase().includes(q));
+      if (hit) id = hit.station;
+    }
+    if (!id) { showToast('No matching station'); return; }
+    flyToAndOpen(id);
+    searchInput.value = '';
+    searchInput.blur();
+  });
+
+  function flyToAndOpen(stationId) {
+    const s = stationById.get(stationId);
+    if (!s) { showToast('Station not found'); return; }
+    if (s.sub_network && !activeNetworks.has(s.sub_network)) {
+      // Re-enable its sub-network so the user can see the dot
+      activeNetworks.add(s.sub_network);
+      try { localStorage.setItem('mco-status-networks', JSON.stringify([...activeNetworks])); } catch {}
+      for (const chip of subnetFiltersEl.querySelectorAll('.chip')) {
+        if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
+      }
+      applySubnetFilter();
+    }
+    closeSpider();
+    map.flyTo({ center: [s.longitude, s.latitude], zoom: 11, speed: 1.4 });
+    map.once('moveend', () => openPopupFor(stationId));
+  }
+
+  // ── Popup ────────────────────────────────────────────────────────────────
+  function popupHTML(stationId) {
+    const s = stationById.get(stationId);
+    if (!s) return '';
+    const ts = latestById.has(stationId) ? latestById.get(stationId) : null;
+    const mins = minutesSince(ts);
+    const status = statusBucket(mins);
+    const stampAbs = ts == null ? '—' : formatStamp(ts);
+    const stampRel = relativeStamp(ts);
+    const pillCls = status;
+    const pillLbl = status === 'fresh' ? 'fresh' : status === 'stale' ? 'stale' : 'no data';
+    const elev = (typeof s.elevation === 'number') ? `${s.elevation.toFixed(0)} m` : '—';
+    const installed = (typeof s.date_installed === 'number')
+      ? new Date(s.date_installed).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' })
+      : '—';
+    return `
+      <div class="pop-title">${escapeHTML(s.name)}</div>
+      <div class="pop-sub">${escapeHTML(s.station)}</div>
+      <div style="margin-top:6px">
+        <span class="pop-badge">${escapeHTML(s.sub_network || '—')}</span>
+        <span class="pop-pill ${pillCls}">${pillLbl}</span>
+      </div>
+      <div class="pop-stamp">
+        <div>${stampAbs}</div>
+        <div style="color:var(--text-muted)">${stampRel}</div>
+      </div>
+      <div class="pop-meta">
+        <div><strong>County:</strong> ${escapeHTML(s.county || '—')}</div>
+        <div><strong>Elevation:</strong> ${elev}</div>
+        <div><strong>Installed:</strong> ${installed}</div>
+      </div>
+      <div class="pop-links">
+        <a href="${DASH_URL(stationId)}"      target="_blank" rel="noopener">Open dashboard →</a>
+        <a href="${LATEST_FOR_URL(stationId)}" target="_blank" rel="noopener">Latest data →</a>
+      </div>
+    `;
+  }
+  function escapeHTML(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  function openPopupFor(stationId, lngLat) {
+    const s = stationById.get(stationId);
+    if (!s) return;
+    if (_popup) { _popup._suppressClose = true; _popup.remove(); _popup = null; }
+    _selectedStation = stationId;
+    const p = new maplibregl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
+      .setLngLat(lngLat || [s.longitude, s.latitude])
+      .setHTML(popupHTML(stationId))
+      .addTo(map);
+    p.on('close', () => {
+      if (p._suppressClose) return;
+      if (_popup === p) {
+        _popup = null;
+        _selectedStation = null;
+        pushState();
+      }
+    });
+    _popup = p;
+    pushState();
+  }
+
+  // ── Spider expand ────────────────────────────────────────────────────────
+  function openSpider(bucketKey, anchorLngLat) {
+    _spiderBucket = bucketKey;
+    rebuildSpider(anchorLngLat);
+  }
+  function closeSpider() {
+    if (_spiderBucket == null) return;
+    _spiderBucket = null;
+    map.getSource('spider')?.setData(emptyFC());
+    map.getSource('spider-lines')?.setData(emptyFC());
+  }
+  function rebuildSpider(anchorLngLatHint) {
+    if (_spiderBucket == null || !map.getSource('spider')) return;
+    // Members of this bucket — all stations (anchor + others)
+    const memberIds = [...bucketById.entries()]
+      .filter(([, k]) => k === _spiderBucket)
+      .map(([sid]) => sid);
+    if (memberIds.length <= 1) { closeSpider(); return; }
+
+    const anchorId = bucketAnchor.get(_spiderBucket);
+    const anchorMeta = stationById.get(anchorId);
+    const anchorLngLat = anchorLngLatHint || [anchorMeta.longitude, anchorMeta.latitude];
+    const anchorPx = map.project(anchorLngLat);
+    const radius = 26;  // pixels
+    const others = memberIds.filter(id => id !== anchorId);
+    const stroke = dotStrokeColor();
+
+    const feet = [];
+    const lines = [];
+    others.forEach((sid, i) => {
+      const theta = (i / others.length) * 2 * Math.PI - Math.PI / 2;  // start at top
+      const px = { x: anchorPx.x + radius * Math.cos(theta), y: anchorPx.y + radius * Math.sin(theta) };
+      const ll = map.unproject(px);
+      const ts = latestById.has(sid) ? latestById.get(sid) : null;
+      const mins = minutesSince(ts);
+      const s = stationById.get(sid);
+      feet.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [ll.lng, ll.lat] },
+        properties: {
+          station: sid,
+          name: s.name,
+          sub_network: s.sub_network,
+          datetime: ts,
+          minutesSince: mins,
+          staleStatus: statusBucket(mins),
+          colocationCount: 1,
+          colocationIndex: 0,
+          bucket: _spiderBucket,
+        },
+      });
+      lines.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [anchorLngLat, [ll.lng, ll.lat]] },
+        properties: { _strokeColor: stroke },
+      });
+    });
+    map.getSource('spider').setData({ type: 'FeatureCollection', features: feet });
+    map.getSource('spider-lines').setData({ type: 'FeatureCollection', features: lines });
+  }
+
+  // ── Map event wiring ─────────────────────────────────────────────────────
+  map.on('load', () => {
+    addCustomLayers();
+    _fitZoom = map.cameraForBounds(MT_FIT_BOUNDS, FIT_OPTS).zoom;
+    _mapReady = true;
+  });
+
+  map.on('zoomend', () => {
+    if (_mapReady && _fitZoom !== undefined && map.getZoom() < _fitZoom) {
+      map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: true });
+    }
+  });
+
+  // Reflect every pan/zoom in the URL so the view is sharable
+  map.on('moveend', pushState);
+
+  // Keep spider feet anchored at constant pixel offset while the camera moves
+  map.on('move', () => {
+    if (_spiderBucket) rebuildSpider();
+  });
+
+  // ── URL state push ───────────────────────────────────────────────────────
+  function pushState() {
+    if (!map) return;
+    const params = {};
+    if (activeMode !== 'status') params.mode = activeMode;
+    params.net = [...activeNetworks].join(',');
+    if (labelsOn) params.labels = 'on';
+    if (legendCollapsed) params.legend = 'collapsed';
+    const theme = document.documentElement.dataset.theme;
+    if (theme) params.theme = theme;
+    try {
+      const c = map.getCenter();
+      params.lng  = c.lng.toFixed(4);
+      params.lat  = c.lat.toFixed(4);
+      params.zoom = map.getZoom().toFixed(2);
+    } catch {}
+    if (_selectedStation) params.station = _selectedStation;
+    history.replaceState(null, '', `?${new URLSearchParams(params)}`);
+  }
+
+  function closePopup() {
+    if (!_popup) return;
+    _popup._suppressClose = true;
+    _popup.remove();
+    _popup = null;
+    if (_selectedStation) {
+      _selectedStation = null;
+      pushState();
+    }
+  }
+
+  // ── Spider close grace period (so cursor can travel from anchor to a foot) ─
+  let _spiderCloseTimer = null;
+  const SPIDER_CLOSE_GRACE_MS = 250;
+  function scheduleSpiderClose() {
+    if (_spiderCloseTimer) clearTimeout(_spiderCloseTimer);
+    _spiderCloseTimer = setTimeout(() => { _spiderCloseTimer = null; closeSpider(); }, SPIDER_CLOSE_GRACE_MS);
+  }
+  function cancelSpiderClose() {
+    if (_spiderCloseTimer) { clearTimeout(_spiderCloseTimer); _spiderCloseTimer = null; }
+  }
+
+  // ── Click handling ───────────────────────────────────────────────────────
+  // Single dispatcher so badge + dot at the same point can't double-fire.
+  // For stacked anchors: clicking opens (or toggles) the spider only — popups are
+  // only opened by a second click on one of the spider feet.
+  map.on('click', (e) => {
+    const feats = map.queryRenderedFeatures(e.point, {
+      layers: ['spider-layer', 'stations-layer', 'stations-badge'],
+    });
+    if (feats.length === 0) {
+      closeSpider();
+      closePopup();
+      return;
+    }
+    const f =
+      feats.find(x => x.layer.id === 'spider-layer') ||
+      feats.find(x => x.layer.id === 'stations-layer') ||
+      feats[0];
+    const props  = f.properties;
+    const lngLat = f.geometry.coordinates.slice();
+    if (f.layer.id === 'spider-layer') {
+      // Second click — open the popup for the chosen station
+      openPopupFor(props.station, lngLat);
+      return;
+    }
+    // Click on the anchor (or its badge) of a stacked site → toggle spider, no popup
+    if (props.colocationCount > 1) {
+      cancelSpiderClose();
+      if (_spiderBucket === props.bucket) closeSpider();
+      else openSpider(props.bucket, lngLat);
+      return;
+    }
+    // Plain (non-co-located) station — close any open spider, open popup directly
+    if (_spiderBucket) closeSpider();
+    openPopupFor(props.station, lngLat);
+  });
+
+  // ── Hover tooltip + hover-open spider for co-located sites ────────────────
+  const tooltipEl = document.getElementById('tooltip');
+  function showTooltip(stationId, e) {
+    const s = stationById.get(stationId);
+    if (!s) return;
+    const ts = latestById.has(stationId) ? latestById.get(stationId) : null;
+    const timeRow = ts == null
+      ? `<span class="tooltip-time">no record</span>`
+      : `<span class="tooltip-time">${escapeHTML(formatStamp(ts))}</span>` +
+        `<span class="tooltip-rel">${escapeHTML(relativeStamp(ts))}</span>`;
+    tooltipEl.innerHTML =
+      `<span class="tooltip-name">${escapeHTML(s.name)}</span>` +
+      `<span class="tooltip-sub">${escapeHTML(s.station)}</span>` +
+      timeRow;
+    tooltipEl.classList.add('visible');
+    tooltipEl.style.left = `${e.originalEvent.clientX + 14}px`;
+    tooltipEl.style.top  = `${e.originalEvent.clientY + 14}px`;
+  }
+  function hideTooltip() { tooltipEl.classList.remove('visible'); }
+
+  // Layers that should keep the spider open while the cursor is on them
+  const SPIDER_HOVER_LAYERS = [
+    'stations-layer', 'stations-badge', 'stations-id-label',
+    'spider-layer', 'spider-id-label',
+  ];
+  for (const lid of SPIDER_HOVER_LAYERS) {
+    map.on('mouseenter', lid, () => {
+      map.getCanvas().style.cursor = 'pointer';
+      cancelSpiderClose();
+    });
+    map.on('mousemove', lid, (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      cancelSpiderClose();
+      showTooltip(f.properties.station, e);
+      // Auto-open spider when hovering a stacked anchor
+      const onAnchor =
+        lid === 'stations-layer' || lid === 'stations-badge' || lid === 'stations-id-label';
+      if (onAnchor && f.properties.colocationCount > 1 && _spiderBucket !== f.properties.bucket) {
+        openSpider(f.properties.bucket, f.geometry.coordinates.slice());
+      }
+    });
+    map.on('mouseleave', lid, () => {
+      map.getCanvas().style.cursor = '';
+      hideTooltip();
+      scheduleSpiderClose();
+    });
+  }
+  // Belt-and-suspenders: clear tooltip on any movement that isn't over a feature
+  map.on('mousemove', () => {
+    if (!map.getCanvas().style.cursor) hideTooltip();
+  });
+
+  // ESC closes spider/popup
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeSpider();
+      closePopup();
+    }
+  });
+
+  // ── Mode toggle ──────────────────────────────────────────────────────────
+  for (const btn of document.querySelectorAll('.seg-btn[data-mode]')) {
+    btn.setAttribute('aria-pressed', btn.dataset.mode === activeMode ? 'true' : 'false');
+    btn.addEventListener('click', () => {
+      activeMode = btn.dataset.mode;
+      try { localStorage.setItem('mco-status-mode', activeMode); } catch {}
+      for (const b of document.querySelectorAll('.seg-btn[data-mode]')) {
+        b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
+      }
+      refreshDotColors();
+      pushState();
+    });
+  }
+
+  // ── Labels toggle ────────────────────────────────────────────────────────
+  let labelsOn = (() => {
+    const u = urlParams.get('labels');
+    if (u === 'on' || u === 'off') return u === 'on';
+    return localStorage.getItem('mco-status-labels') === 'on';
+  })();
+  const labelsBtn = document.getElementById('btn-labels');
+  labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
+  function applyLabelsVisibility() {
+    const vis = labelsOn ? 'visible' : 'none';
+    for (const lid of ['stations-id-label', 'spider-id-label']) {
+      if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', vis);
+    }
+  }
+  labelsBtn.addEventListener('click', () => {
+    labelsOn = !labelsOn;
+    labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
+    try { localStorage.setItem('mco-status-labels', labelsOn ? 'on' : 'off'); } catch {}
+    applyLabelsVisibility();
+    pushState();
+  });
+
+  // ── Legend collapse/expand ───────────────────────────────────────────────
+  const legendEl       = document.getElementById('legend');
+  const legendHeaderEl = document.getElementById('legend-header');
+  const legendToggleBtn= document.getElementById('legend-toggle-btn');
+  let legendCollapsed = (() => {
+    const u = urlParams.get('legend');
+    if (u === 'open' || u === 'collapsed') return u === 'collapsed';
+    return localStorage.getItem('mco-status-legend') === 'collapsed';
+  })();
+  function setLegendCollapsed(collapsed) {
+    legendCollapsed = !!collapsed;
+    legendEl.classList.toggle('collapsed', legendCollapsed);
+    legendToggleBtn.setAttribute('aria-expanded', legendCollapsed ? 'false' : 'true');
+    legendToggleBtn.setAttribute('aria-label', legendCollapsed ? 'Expand legend' : 'Collapse legend');
+    try { localStorage.setItem('mco-status-legend', legendCollapsed ? 'collapsed' : 'expanded'); } catch {}
+  }
+  setLegendCollapsed(legendCollapsed);
+  legendHeaderEl.addEventListener('click', () => {
+    setLegendCollapsed(!legendCollapsed);
+    pushState();
+  });
+
+  // ── Legend ───────────────────────────────────────────────────────────────
+  function renderLegend() {
+    legendRowsEl.innerHTML = '';
+    const rows = activeMode === 'status'
+      ? [
+          { color: STATUS_FRESH, label: 'Reported < 1 h ago' },
+          { color: STATUS_STALE, label: 'Stale (≥ 1 h)' },
+          { color: NULL_COLOR,   label: 'No record' },
+        ]
+      : [
+          ...TIME_BINS.map(b => ({ color: b.color, label: b.label })),
+          { color: NULL_COLOR, label: 'No record' },
+        ];
+    legendTitleEl.textContent = activeMode === 'status' ? 'Reporting status' : 'Time since last record';
+    for (const r of rows) {
+      const row = document.createElement('div');
+      row.className = 'legend-row';
+      const sw = document.createElement('div');
+      sw.className = 'legend-swatch'; sw.style.background = r.color;
+      const lb = document.createElement('div');
+      lb.className = 'legend-lbl'; lb.textContent = r.label;
+      row.appendChild(sw); row.appendChild(lb);
+      legendRowsEl.appendChild(row);
+    }
+  }
+
+  // ── Periodic ticks ───────────────────────────────────────────────────────
+  setInterval(() => { rebuildSource(); }, REPAINT_TICK_MS);   // recompute minutesSince
+  setInterval(refreshLatest, LATEST_REFRESH_MS);              // poll API
+
+  // ── Boot ─────────────────────────────────────────────────────────────────
+  renderLegend();
+  loadAll();
+
+</script>
+</body>
+</html>
