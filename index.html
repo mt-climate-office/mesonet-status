@@ -98,6 +98,10 @@
     }
     .maplibregl-ctrl-group button:hover { background: var(--accent-hover) !important; }
     .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter, none); }
+    /* Custom "Zoom to full extent" button — same visual treatment as built-ins. */
+    .maplibregl-ctrl-fit .maplibregl-ctrl-icon {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23202020' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 8 4 4 8 4'/><polyline points='20 8 20 4 16 4'/><polyline points='4 16 4 20 8 20'/><polyline points='20 16 20 20 16 20'/></svg>");
+    }
     :root              { --ctrl-icon-filter: invert(1); }
     [data-theme="light"] { --ctrl-icon-filter: none; }
     .maplibregl-ctrl-attrib {
@@ -511,15 +515,6 @@
   </div>
 
   <div class="nav-actions">
-    <button class="nav-btn icon-only" id="btn-fit" title="Zoom to full extent" aria-label="Zoom to full extent">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="4 8 4 4 8 4"/>
-        <polyline points="20 8 20 4 16 4"/>
-        <polyline points="4 16 4 20 8 20"/>
-        <polyline points="20 16 20 20 16 20"/>
-      </svg>
-    </button>
     <button class="nav-btn icon-only" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
       <svg id="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -750,12 +745,6 @@
     pushState();
   });
 
-  // ── Zoom to full extent ──────────────────────────────────────────────────
-  document.getElementById('btn-fit').addEventListener('click', () => {
-    closeSpider();
-    map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: !reduceMotion });
-  });
-
   // ── Info modal ───────────────────────────────────────────────────────────
   document.getElementById('btn-info').addEventListener('click', () => infoModal.showModal());
   infoModal.addEventListener('click', (e) => {
@@ -865,6 +854,29 @@
     maxBounds: MT_MAX_BOUNDS,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  // Append a "Zoom to full extent" button into the same control group as the
+  // zoom in/out buttons, mirroring where the compass sits on the snowpack
+  // explorer. NavigationControl renders its DOM synchronously inside addControl,
+  // so the .maplibregl-ctrl-group is queryable on the next line.
+  (function addFitToExtentButton() {
+    const navGroup = document.querySelector('.maplibregl-ctrl-top-right .maplibregl-ctrl-group');
+    if (!navGroup) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'maplibregl-ctrl-fit';
+    btn.title = 'Zoom to full extent';
+    btn.setAttribute('aria-label', 'Zoom to full extent');
+    // Match the built-in zoom buttons: just an empty span; the icon comes from
+    // a background-image SVG in CSS, which the .maplibregl-ctrl-icon invert
+    // filter flips for dark mode (same as the built-in icons).
+    btn.innerHTML = `<span class="maplibregl-ctrl-icon" aria-hidden="true"></span>`;
+    btn.addEventListener('click', () => {
+      closeSpider();
+      map.fitBounds(MT_FIT_BOUNDS, { ...FIT_OPTS, animate: !reduceMotion });
+    });
+    navGroup.appendChild(btn);
+  })();
 
   function addCustomLayers() {
     // Hide all label/symbol layers from the basemap that overlap our station dots —
