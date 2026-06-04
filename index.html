@@ -294,7 +294,9 @@
       flex-shrink: 0;
       font-family: 'Space Mono', monospace;
       font-size: 0.68rem;
-      color: var(--text-muted);
+      /* --text-secondary, not --text-muted: --text-muted on --bg-surface
+         drops to ~4.4:1 (just under WCAG AA 4.5:1). */
+      color: var(--text-secondary);
     }
 
     .search-kbd {
@@ -545,6 +547,8 @@
       #btn-info { width: 40px; height: 40px; }
       .nav-btn.icon-only { min-width: 40px; }
       #legend-toggle-btn { width: 32px; height: 32px; }
+      #search-dropdown li { min-height: 40px; padding: 10px 8px; }
+      .legend-row { min-height: 36px; padding: 7px 6px; }
     }
   </style>
 </head>
@@ -569,7 +573,7 @@
     <div class="search-wrap">
       <label for="search-input" class="sr-only">Search stations</label>
       <input type="search" id="search-input"
-             role="combobox" aria-autocomplete="list"
+             role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
              aria-controls="search-dropdown" aria-expanded="false"
              placeholder="Search stations…" autocomplete="off">
       <kbd class="search-kbd" aria-hidden="true">/</kbd>
@@ -640,7 +644,10 @@
   </aside>
 </div>
 
-<div id="tooltip" role="tooltip"></div>
+<!-- Tooltip is purely visual: anchored to cursor, no focusable trigger, so it
+     would never be surfaced to a screen reader. The aria-live #sr-announce
+     region below covers SR notifications. -->
+<div id="tooltip" aria-hidden="true"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="sr-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
@@ -831,10 +838,13 @@
   });
 
   // ── Info modal ───────────────────────────────────────────────────────────
-  document.getElementById('btn-info').addEventListener('click', () => infoModal.showModal());
+  const btnInfo = document.getElementById('btn-info');
+  btnInfo.addEventListener('click', () => infoModal.showModal());
   infoModal.addEventListener('click', (e) => {
     if (e.target === infoModal || e.target.dataset.closeModal !== undefined) infoModal.close();
   });
+  // Restore focus to the trigger on close (a11y requirement when using dialogs).
+  infoModal.addEventListener('close', () => btnInfo.focus());
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   function minutesSince(ts) {
@@ -887,6 +897,22 @@
   let _popup = null;
   let _mapReady = false;
   let _fitZoom;
+  // Cached static overlay FeatureCollections — fetched once, reused across
+  // every setStyle() (the source is re-added but data stays in memory).
+  let _tribalFC = null;
+  let _stateFC  = null;
+  async function preloadOverlay(sourceId, url, save) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const fc = await res.json();
+      save(fc);
+      // If the source still has the URL data (initial load), swap to the
+      // in-memory copy so subsequent re-adds don't refetch.
+      const src = map.getSource(sourceId);
+      if (src) src.setData(fc);
+    } catch { /* overlays are decorative — silent failure is fine */ }
+  }
 
   // ── URL state ────────────────────────────────────────────────────────────
   // URL params take precedence over localStorage take precedence over defaults.
@@ -993,12 +1019,22 @@
     if (!map.getSource('spider-lines')) {
       map.addSource('spider-lines', { type: 'geojson', data: emptyFC() });
     }
+    // Static overlay data (reservations + state outline): fetched once on first
+    // load, then reused across setStyle() so theme toggle doesn't refetch.
     if (!map.getSource('tribal')) {
-      map.addSource('tribal', { type: 'geojson', data: 'data/mt_reservations_simple.geojson' });
+      map.addSource('tribal', {
+        type: 'geojson',
+        data: _tribalFC || 'data/mt_reservations_simple.geojson',
+      });
     }
     if (!map.getSource('state')) {
-      map.addSource('state', { type: 'geojson', data: 'data/mt_state_simple.geojson' });
+      map.addSource('state', {
+        type: 'geojson',
+        data: _stateFC || 'data/mt_state_simple.geojson',
+      });
     }
+    if (!_tribalFC) preloadOverlay('tribal', 'data/mt_reservations_simple.geojson', fc => _tribalFC = fc);
+    if (!_stateFC)  preloadOverlay('state',  'data/mt_state_simple.geojson',         fc => _stateFC  = fc);
 
     // Tribal-land fill + outline sit below all our station layers so the dots
     // always read as primary. The matching label layer is added last (on top).
@@ -1039,8 +1075,7 @@
     if (!map.getLayer('stations-layer')) {
       map.addLayer({
         id: 'stations-layer', type: 'circle', source: 'stations',
-        // Only render the anchor of each bucket; spider feet come from 'spider' source
-        filter: ['==', ['get', 'colocationIndex'], 0],
+        // Filter is set by applyAllFilters() at the end of this function.
         paint: stationPaint(),
       });
     }
@@ -1048,10 +1083,6 @@
     if (!map.getLayer('stations-badge')) {
       map.addLayer({
         id: 'stations-badge', type: 'symbol', source: 'stations',
-        filter: ['all',
-          ['==', ['get', 'colocationIndex'], 0],
-          ['>',  ['get', 'colocationCount'], 1],
-        ],
         layout: {
           'text-field': ['to-string', ['get', 'colocationCount']],
           'text-font':  ['Open Sans Bold', 'Arial Unicode MS Bold'],
@@ -1072,7 +1103,6 @@
     if (!map.getLayer('stations-id-label')) {
       map.addLayer({
         id: 'stations-id-label', type: 'symbol', source: 'stations',
-        filter: ['==', ['get', 'colocationIndex'], 0],
         minzoom: LABEL_MINZOOM,
         layout: stationLabelLayout(),
         paint: stationLabelPaint(),
@@ -1306,15 +1336,12 @@
       rebuildSource();
       applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
-      // Deep-link from ?station=… in URL
+      // Deep-link from ?station=… in URL. loadAll() is only called from the
+      // map's 'load' handler, so _mapReady is always true here.
       if (_initStation && stationById.has(_initStation)) {
-        const openIt = () => {
-          const s = stationById.get(_initStation);
-          if (_hasInitPos) openPopupFor(_initStation, [s.longitude, s.latitude]);
-          else             flyToAndOpen(_initStation);
-        };
-        if (_mapReady) openIt();
-        else map.once('idle', openIt);
+        const s = stationById.get(_initStation);
+        if (_hasInitPos) openPopupFor(_initStation, [s.longitude, s.latitude]);
+        else             flyToAndOpen(_initStation);
       } else {
         // Push initial URL so it's clean even if the user hasn't interacted yet
         pushState();
@@ -1669,8 +1696,10 @@
   }
 
   // ── Spider expand ────────────────────────────────────────────────────────
-  function openSpider(bucketKey, anchorLngLat) {
-    _spiderBucket = bucketKey;
+  // Argument is the bucket *key* (a string), not the bucketKey() function;
+  // named differently to avoid shadowing the outer helper.
+  function openSpider(key, anchorLngLat) {
+    _spiderBucket = key;
     rebuildSpider(anchorLngLat);
   }
   function closeSpider() {
@@ -1876,37 +1905,44 @@
   }
   function hideTooltip() { tooltipEl.classList.remove('visible'); }
 
-  // Layers that should keep the spider open while the cursor is on them
-  const SPIDER_HOVER_LAYERS = [
+  // Single global mousemove dispatcher — does its own queryRenderedFeatures
+  // against the layer set. Avoids layer-scoped listeners which can become
+  // detached when the style is swapped on theme toggle (MapLibre keeps the
+  // map-level handler stable across setStyle).
+  const HOVER_LAYERS = [
     'stations-layer', 'stations-badge', 'stations-id-label',
     'spider-layer', 'spider-id-label',
   ];
-  for (const lid of SPIDER_HOVER_LAYERS) {
-    map.on('mouseenter', lid, () => {
+  const ANCHOR_LAYER_IDS = new Set(['stations-layer', 'stations-badge', 'stations-id-label']);
+  let _hoveredStation = null;
+
+  map.on('mousemove', (e) => {
+    const layers = HOVER_LAYERS.filter(lid => map.getLayer(lid));
+    const feats = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
+    const f = feats[0] || null;
+    if (f) {
       map.getCanvas().style.cursor = 'pointer';
       cancelSpiderClose();
-    });
-    map.on('mousemove', lid, (e) => {
-      const f = e.features?.[0];
-      if (!f) return;
-      cancelSpiderClose();
       showTooltip(f.properties.station, e);
-      // Auto-open spider when hovering a stacked anchor
-      const onAnchor =
-        lid === 'stations-layer' || lid === 'stations-badge' || lid === 'stations-id-label';
-      if (onAnchor && f.properties.colocationCount > 1 && _spiderBucket !== f.properties.bucket) {
+      _hoveredStation = f.properties.station;
+      if (ANCHOR_LAYER_IDS.has(f.layer.id)
+          && f.properties.colocationCount > 1
+          && _spiderBucket !== f.properties.bucket) {
         openSpider(f.properties.bucket, f.geometry.coordinates.slice());
       }
-    });
-    map.on('mouseleave', lid, () => {
+    } else if (_hoveredStation !== null) {
       map.getCanvas().style.cursor = '';
       hideTooltip();
       scheduleSpiderClose();
-    });
-  }
-  // Belt-and-suspenders: clear tooltip on any movement that isn't over a feature
-  map.on('mousemove', () => {
-    if (!map.getCanvas().style.cursor) hideTooltip();
+      _hoveredStation = null;
+    }
+  });
+  // Cursor + tooltip cleanup when the pointer leaves the map entirely.
+  map.getCanvas().addEventListener('mouseleave', () => {
+    map.getCanvas().style.cursor = '';
+    hideTooltip();
+    scheduleSpiderClose();
+    _hoveredStation = null;
   });
 
   // Global keyboard shortcuts: ESC closes things; / focuses search.
@@ -2078,6 +2114,15 @@
     row.addEventListener('dblclick', () => {
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
       isolateCategory(key);
+    });
+    // Keyboard equivalent for double-click: Shift+Enter on a focused row isolates.
+    // (Plain Enter / Space still fires `click` natively → toggle.)
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+        isolateCategory(key);
+      }
     });
   }
 
