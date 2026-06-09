@@ -781,7 +781,6 @@
   'use strict';
 
   // ── Constants ────────────────────────────────────────────────────────────
-  const STADIA_API_KEY  = 'ad892279-b205-49ef-88fc-f413b876a985';
   const STATIONS_URL    = 'https://mesonet.climate.umt.edu/api/stations/?type=json';
   const LATEST_URL      = 'https://mesonet.climate.umt.edu/api/latest/?type=json';
   const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
@@ -866,12 +865,12 @@
   }
 
   // ── Theme ────────────────────────────────────────────────────────────────
-  function stadiaStyleUrl() {
-    // Alidade Smooth: muted, low-saturation, low-POI cartography designed as
-    // a data-overlay canvas — lets the Crameri roma dots read as primary.
+  function basemapStyleUrl() {
+    // CARTO Positron / Dark Matter: neutral data-vis backdrops with no public-lands
+    // tinting or saturated landform shading — lets the roma-palette dots read as primary.
     const variant = document.documentElement.dataset.theme === 'dark'
-      ? 'alidade_smooth_dark' : 'alidade_smooth';
-    return `https://tiles.stadiamaps.com/styles/${variant}.json?api_key=${STADIA_API_KEY}`;
+      ? 'dark-matter-gl-style' : 'positron-gl-style';
+    return `https://basemaps.cartocdn.com/gl/${variant}/style.json`;
   }
   function dotStrokeColor() {
     return document.documentElement.dataset.theme === 'dark' ? '#ffffff' : '#2a2a3a';
@@ -888,7 +887,7 @@
     document.documentElement.dataset.theme = next;
     lsSet('mco-theme', next);
     syncThemeIcons();
-    map.setStyle(stadiaStyleUrl());
+    map.setStyle(basemapStyleUrl());
     map.once('style.load', () => {
       addCustomLayers();   // re-add — setStyle wipes our sources/layers
       rebuildSource();     // repopulate the now-empty stations source
@@ -1045,7 +1044,7 @@
   // ── Map init ─────────────────────────────────────────────────────────────
   const map = new maplibregl.Map({
     container: 'map',
-    style: stadiaStyleUrl(),
+    style: basemapStyleUrl(),
     ...(_hasInitPos
       ? { center: [_initLng, _initLat], zoom: _initZoom }
       : { bounds: MT_FIT_BOUNDS, fitBoundsOptions: FIT_OPTS }),

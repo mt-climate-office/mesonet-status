@@ -21,7 +21,7 @@ Other features:
 - **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
 - **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
 - **Montana state outline** so the state shape reads as the primary frame.
-- **Light/dark theme** with muted [Stadia Alidade Smooth](https://docs.stadiamaps.com/themes/) basemaps designed as data-overlay canvases.
+- **Light/dark theme** with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
 - **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
 - **First-visit help dialog** auto-opens once so newcomers get the orientation.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
@@ -91,7 +91,7 @@ Published via [GitHub Pages](https://pages.github.com) from the `main` branch. T
 ## Tooling
 
 - [MapLibre GL JS](https://maplibre.org) v5.18 via CDN.
-- [Stadia Maps](https://stadiamaps.com) Alidade Smooth + Alidade Smooth Dark basemaps (muted data-vis backdrops).
+- [CARTO Basemaps](https://carto.com/basemaps) Positron + Dark Matter (neutral data-vis backdrops, free, no API key).
 - Vanilla JS / HTML / CSS — no bundler, no framework.
 
 ## License
