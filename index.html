@@ -78,8 +78,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.3.1/theme/mco-theme.css"
-        integrity="sha384-5jJ21b51CkMNt/J34JqlFzd67/QnvLRFwJ4DgM99nRyV5LvAwpwsyWbSCCp2Mq6B"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/theme/mco-theme.css"
+        integrity="sha384-4pkfmY9oEide8dGxbmdM4X3WWNhPH/pib8GtGtUyk/i9W+OaYammaSfzraVtt/p/"
         crossorigin="anonymous">
 
   <style>
@@ -339,15 +339,17 @@
     }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
-    /* kit-override: branding stays visible at all widths (per design) — the
-       navbar wraps to a second row instead of shedding pieces, so undo the
-       kit's ≤750px subtitle shed. Below ~1200px the primary controls (search
-       + mode + networks) drop to a dedicated second row; row 1 keeps branding
-       left and refresh/labels/theme/info right. CSS `order` swaps the visual
-       position without disturbing tab order. */
-    @media (max-width: 750px) {
-      .mco-navbar .brand-subtitle { display: inline; }
-    }
+    /* Header break behavior mirrors mco-mesonet-photos: the kit's ≤750px brand
+       collapse is adopted as-is (badge only — the lockup is hidden visually, so
+       the <h1> stays in the accessibility tree), and below 1200px the primary
+       controls (search + mode + networks) drop to a dedicated second row while
+       row 1 keeps the brand left and refresh/labels/theme/info right. CSS
+       `order` swaps the visual position without disturbing tab order.
+
+       1200px rather than photos' 1060px on purpose: this bar's content needs
+       ~1120px for one row (photos' needs ~1000px), so copying the number
+       literally would force nowrap onto content that doesn't fit. Same pattern,
+       breakpoint tuned to this app — exactly how photos picked its own. */
     @media (max-width: 1200px) {
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
@@ -385,7 +387,7 @@
   <div class="controls">
     <!-- Primary action: search a station. Press / anywhere to jump here.
          Custom listbox dropdown (not <datalist>) so the popup is fully themed. -->
-    <div class="search-wrap">
+    <div class="search-wrap mco-search-collapse" id="search-wrap">
       <label for="search-input" class="sr-only">Search stations</label>
       <input type="search" id="search-input"
              role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
@@ -409,6 +411,16 @@
   </div>
 
   <div class="nav-meta">
+    <!-- Below 460px the search field collapses into this disclosure and reopens
+         as an overlay bar under the navbar (kit .mco-search-collapse +
+         MCO.initSearchCollapse). Hidden at wider widths. -->
+    <button type="button" class="nav-btn icon-only mco-search-toggle" id="btn-search-toggle"
+            aria-expanded="false" aria-controls="search-wrap" aria-label="Search stations">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </button>
     <span class="refresh-status" title="Last refreshed">
       <span class="dot" aria-hidden="true"></span>
       <span id="refresh-stamp">loading…</span>
@@ -523,10 +535,10 @@
         integrity="sha384-MYTfGytf3SxNyO7ZAu/U0wHCcs3NpqE92Q3wBz5PQhat8kEA/wbwb9qY6H/JLyuR"
         crossorigin="anonymous"></script>
 <!-- mco-web-style (window.MCO / MCO.map) -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.3.1/core/mco-core.js"
-        integrity="sha384-BHWqotPZgNN9VvHA0OfSUux8LD04tIOXhCzfxgCvfy5hmYARIl8ifPU0FHm6VNAD"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/core/mco-core.js"
+        integrity="sha384-hfL64718oLYH6thf6wwatzws4QkVAx1uSU3Sxk8zy4KVzfJalV/a27lwE8vV4dn+"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.3.1/map/mco-map.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/map/mco-map.js"
         integrity="sha384-0aF67+MSXmcocGs8r3qiehgDNzgXo9F48olS5OX575wO2llw2cuGcqLpd6+L7D76"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>

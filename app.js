@@ -858,11 +858,27 @@
     searchInput.removeAttribute('aria-activedescendant');
   }
 
+  // Below 460px the search field collapses into #btn-search-toggle and reopens
+  // as an overlay bar — kit component (MCO.initSearchCollapse). The kit owns
+  // open/close, focus in and out, outside-dismiss and viewport-widening resets;
+  // this app keeps Esc precedence against its own suggestions dropdown, the `/`
+  // shortcut, and where focus goes after a station is picked.
+  const searchCollapse = MCO.initSearchCollapse({
+    wrap: document.getElementById('search-wrap'),
+    toggle: document.getElementById('btn-search-toggle'),
+    input: searchInput,
+    onClose: hideSearchDropdown,
+  });
+
   function selectStation(stationId) {
     hideSearchDropdown();
     flyToAndOpen(stationId);
     searchInput.value = '';
-    searchInput.blur();
+    // Collapsed: close the overlay, which returns focus to the toggle. Blurring
+    // instead would drop focus to <body>, since the field is display:none once
+    // the overlay closes.
+    if (searchCollapse.isCollapsed()) searchCollapse.close();
+    else searchInput.blur();
   }
 
   function setActiveSearchItem(idx) {
@@ -1207,6 +1223,7 @@
         t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       if (inField) return;
       e.preventDefault();
+      if (searchCollapse.isCollapsed()) { searchCollapse.open(); return; }
       searchInput.focus();
       searchInput.select();
     }
@@ -1214,8 +1231,10 @@
   // Keyboard nav inside the custom dropdown.
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // Unwind one step at a time: suggestions first, then the overlay.
+      if (!searchDropdown.hidden) { searchInput.value = ''; hideSearchDropdown(); return; }
+      if (searchCollapse.isOpen()) { searchCollapse.close(); return; }
       searchInput.value = '';
-      hideSearchDropdown();
       searchInput.blur();
       return;
     }
