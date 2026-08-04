@@ -78,8 +78,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/theme/mco-theme.css"
-        integrity="sha384-4pkfmY9oEide8dGxbmdM4X3WWNhPH/pib8GtGtUyk/i9W+OaYammaSfzraVtt/p/"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.6.0/theme/mco-theme.css"
+        integrity="sha384-bCKsV+qD6GxtndFeAmhumsOdsaznA4xXBh6mfwHgvRbxTMPoOwClDB3HjZuy42fp"
         crossorigin="anonymous">
 
   <style>
@@ -411,9 +411,11 @@
   </div>
 
   <div class="nav-meta">
-    <!-- Below 460px the search field collapses into this disclosure and reopens
-         as an overlay bar under the navbar (kit .mco-search-collapse +
-         MCO.initSearchCollapse). Hidden at wider widths. -->
+    <!-- At compact widths (≤640px) the search field collapses into this
+         disclosure and reopens as an overlay bar under the navbar (kit
+         .mco-search-collapse + MCO.initSearchCollapse). Hidden at wider widths.
+         640px rather than 460px is what removes this bar's third row: with the
+         240px field gone the controls fit one line with ~100px to spare. -->
     <button type="button" class="nav-btn icon-only mco-search-toggle" id="btn-search-toggle"
             aria-expanded="false" aria-controls="search-wrap" aria-label="Search stations">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
@@ -535,10 +537,10 @@
         integrity="sha384-MYTfGytf3SxNyO7ZAu/U0wHCcs3NpqE92Q3wBz5PQhat8kEA/wbwb9qY6H/JLyuR"
         crossorigin="anonymous"></script>
 <!-- mco-web-style (window.MCO / MCO.map) -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/core/mco-core.js"
-        integrity="sha384-hfL64718oLYH6thf6wwatzws4QkVAx1uSU3Sxk8zy4KVzfJalV/a27lwE8vV4dn+"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.6.0/core/mco-core.js"
+        integrity="sha384-DPbXD2xVhws/XeQ5zgnH5fpba972pw9yafpaHL8phz43iEwktW1RLoID4eqRFYue"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.5.1/map/mco-map.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.6.0/map/mco-map.js"
         integrity="sha384-0aF67+MSXmcocGs8r3qiehgDNzgXo9F48olS5OX575wO2llw2cuGcqLpd6+L7D76"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
