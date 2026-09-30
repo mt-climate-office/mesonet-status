@@ -12,7 +12,7 @@
     style-src 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net;
     font-src https://fonts.gstatic.com;
     img-src 'self' data: blob:;
-    connect-src 'self' https://mesonet.climate.umt.edu https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://s3.amazonaws.com;
+    connect-src 'self' https://mesonet2.climate.umt.edu https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://s3.amazonaws.com;
     base-uri 'none';
     form-action 'none'">
 
@@ -96,6 +96,10 @@
          tokens because .pop-pill consumes them in CSS. */
       --status-fresh:   #2a8a86;  /* vivid teal */
       --status-stale:   #b8421b;  /* vivid red-orange */
+      --status-partial: #f4d88e;  /* roma 3–6 h pale yellow — Health "partial";
+                                     the one ramp stop whose lightness separates
+                                     from both teal and red, so it survives
+                                     grayscale (HOUSE-STYLE §6) */
       --status-null:    #9aa3b3;
     }
 
@@ -265,12 +269,24 @@
     .legend-row.off { opacity: 0.4; }
     .legend-row.off .legend-lbl { text-decoration: line-through; }
     .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid var(--border-glass); }
-    .legend-lbl { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; }
-    .legend-hint {
+    .legend-lbl { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; flex: 1; }
+    .legend-count {
+      font-family: var(--font-mono); font-size: 0.74rem; font-weight: 600;
+      color: var(--text-primary); font-variant-numeric: tabular-nums;
+      margin-left: 6px; min-width: 3ch; text-align: right;   /* fixed columns so rows align */
+    }
+    .legend-pct {
+      font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted);
+      font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
+    }
+    /* Dimmed row: the label is struck through; the figures stay readable. */
+    .legend-row.off .legend-count, .legend-row.off .legend-pct { color: var(--text-secondary); }
+    .legend-hint, .legend-note {
       margin-top: 6px; padding: 0 4px;
       font-size: 0.62rem; font-style: italic;
       color: var(--text-muted);
     }
+    .legend-note { margin-top: 3px; }
 
     /* ── Popup ─────────────────────────────────────────────────────────────── */
     .maplibregl-popup { max-width: 320px !important; }
@@ -315,6 +331,23 @@
     .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
     .pop-pill.stale { background: var(--status-stale); color: #fff; }
     .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
+    /* Health pills reuse the same three data colors. Dark text on the pale
+       yellow: ≈12:1. */
+    .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
+    .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
+    .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
+    .pop-missing {
+      margin-top: 8px; padding: 6px 8px;
+      background: var(--bg-raised); border-radius: var(--radius-sm);
+      font-size: 0.75rem; color: var(--text-secondary);
+    }
+    .pop-missing strong { color: var(--text-primary); font-weight: 500; }
+    .pop-missing ul {
+      margin: 4px 0 0; padding-left: 1.1em;
+      max-height: 120px; overflow-y: auto;   /* 27-element loggers exist */
+      line-height: 1.45;
+    }
+    .pop-missing-note { font-style: italic; color: var(--text-muted); }
     .pop-links { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
     .pop-links a {
       font-size: 0.78rem; color: var(--accent-line); text-decoration: underline; text-underline-offset: 2px;
@@ -337,6 +370,12 @@
       font-weight: 500;
       margin-top: 1px;
     }
+    #tooltip .tooltip-health {
+      display: block;
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      margin-top: 3px;
+    }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
     /* Header break behavior mirrors mesonet-photos: the kit's ≤750px brand
@@ -346,11 +385,12 @@
        row 1 keeps the brand left and refresh/labels/theme/info right. CSS
        `order` swaps the visual position without disturbing tab order.
 
-       1200px rather than photos' 1060px on purpose: this bar's content needs
-       ~1120px for one row (photos' needs ~1000px), so copying the number
-       literally would force nowrap onto content that doesn't fit. Same pattern,
-       breakpoint tuned to this app — exactly how photos picked its own. */
-    @media (max-width: 1200px) {
+       1280px rather than photos' 1060px on purpose: this bar's content needs
+       ~1180px for one row (photos' needs ~1000px; it was ~1120px here before
+       the third Health mode segment), so copying the number literally would
+       force nowrap onto content that doesn't fit. Same pattern, breakpoint
+       tuned to this app — exactly how photos picked its own. */
+    @media (max-width: 1280px) {
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
@@ -404,6 +444,7 @@
     <div class="seg-btns" role="group" aria-label="Visualization mode">
       <button type="button" class="nav-btn seg-btn" data-mode="status"    aria-pressed="true">Status</button>
       <button type="button" class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time since</button>
+      <button type="button" class="nav-btn seg-btn" data-mode="health"    aria-pressed="false">Health</button>
     </div>
 
     <!-- Networks (multi-select): any combination. Pills with a check on active. -->
@@ -507,14 +548,16 @@
     <div class="info-section">
       <h3>Modes</h3>
       <ul>
-        <li><strong>Status</strong> — green if reported in the last hour, red otherwise.</li>
-        <li><strong>Time since</strong> — 5 bins from &lt;1 h to &gt;24 h.</li>
+        <li><strong>Status</strong> — green if reported in the last 2 hours, red otherwise.</li>
+        <li><strong>Time since</strong> — 5 bins from &lt;2 h to &gt;24 h.</li>
+        <li><strong>Health</strong> — <strong>Operational</strong>: reported in the last 2 hours with every expected sensor present. <strong>Partial</strong>: reported, but one or more sensors are silent (the popup lists them). <strong>Total outage</strong>: no report in the last 2 hours.</li>
       </ul>
     </div>
 
     <div class="info-section">
       <h3>How to use it</h3>
       <ul>
+        <li><strong>Legend counts</strong> — every row shows how many of the selected networks' stations fall in that category, and the share.</li>
         <li><strong>Search</strong> — press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> + <kbd>Enter</kbd> to pick.</li>
         <li><strong>Networks</strong> — chips toggle HydroMet / AgriMet.</li>
         <li><strong>Legend</strong> — click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate.</li>

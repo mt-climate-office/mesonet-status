@@ -6,8 +6,11 @@ A real-time station status map for the [Montana Mesonet](https://climate.umt.edu
 
 Shows the current reporting state of every station across the HydroMet and AgriMet sub-networks. Two view modes:
 
-- **Status** — single threshold: dot color reflects whether the station has posted within the last hour.
+- **Status** — single threshold: dot color reflects whether the station has posted within the last 2 hours.
 - **Time since** — five bins of "minutes since the latest record," ceiling at >24 h.
+- **Health** — three classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial**: reported within the 2 hours, but one or more expected sensors are null in the latest record (the popup lists them). **Total outage**: no report in the last 2 hours, or no record at all.
+
+In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
 
 Color is sampled from [Crameri's *roma*](https://www.fabiocrameri.ch/colourmaps/) scientific colour map — perceptually uniform, ordered, and safe for the major color-vision deficiencies, with a culturally readable green = good → red = bad direction.
 
@@ -15,7 +18,7 @@ Other features:
 
 - **HydroMet / AgriMet** sub-network toggles with live counts. Hiding a network dynamically resolves any stacked sites at that location to single dots.
 - **Search box** with a custom themed dropdown (8 results, scored by relevance), keyboard navigation (`↑` `↓` `Enter`), and a `/` global shortcut to jump to it from anywhere on the page.
-- **Plotly-style interactive legend** in the lower-left: click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.
+- **Plotly-style interactive legend** in the lower-left: click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. Every row shows the live count and share of the selected networks' stations in that category (label, count, percentage); hiding a category never changes its count.
 - **Co-located sites** — the HydroMet station is always the visible anchor with a count badge. Hover (desktop) or tap (mobile) to fan the others out; a second click on a foot opens that station's popup.
 - **Toggleable station-ID labels** with collision-based dodging.
 - **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
@@ -35,10 +38,11 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `lng`     | float                                     | Map center longitude                          |
 | `lat`     | float                                     | Map center latitude                           |
 | `zoom`    | float                                     | Map zoom                                      |
-| `mode`    | `status` \| `timesince`                   | Visualization mode                            |
+| `mode`    | `status` \| `timesince` \| `health`       | Visualization mode                            |
 | `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
 | `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
-| `tcat`    | list (`0+1+2+3+4`, `null`)                | Visible Time-since bins (0 = `<1 h`, 4 = `>24 h`). Omitted = all. |
+| `tcat`    | list (`0+1+2+3+4`, `null`)                | Visible Time-since bins (0 = `<2 h`, 4 = `>24 h`). Omitted = all. |
+| `hcat`    | list (`operational+partial+outage`)       | Visible Health classes. Omitted = all.        |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
 | `theme`   | `light` \| `dark`                         | Theme override                                |
@@ -59,8 +63,13 @@ Examples:
 
 ## Data sources
 
-- Stations + metadata: <https://mesonet.climate.umt.edu/api/stations/?type=json>
-- Latest record per station: <https://mesonet.climate.umt.edu/api/latest/?type=json>
+- Stations + metadata: <https://mesonet2.climate.umt.edu/api/stations/?type=json>
+- Latest record per station: <https://mesonet2.climate.umt.edu/api/latest/?type=json>
+- Expected elements (sensors) per station: `https://mesonet2.climate.umt.edu/api/elements/<station>/?type=json` (e.g. <https://mesonet2.climate.umt.edu/api/elements/acemidwa/?type=json>). Without `type=json` the endpoint returns HTML; rows are duplicated and are de-duplicated by `element`.
+
+**Health** cross-references the two: an expected element whose `description_short` column (`"<description_short> [<unit>]"`) is null in the station's latest record counts as a sensor not reporting. The element lists are fetched once per station (8 concurrent requests, ~10 s cold for the full network) and cached in `localStorage` under `mco-status-elements-v1` with a 24 h per-station TTL, so a reload paints Health from cache immediately. Clear that key (or the site's storage) to force a refetch. Stations whose list fails to load are counted as operational when fresh and called out in the panel footer.
+
+All API reads go to `mesonet2.climate.umt.edu` (the page CSP's `connect-src` pins that host). The per-station dashboard link stays on `mesonet.climate.umt.edu/dash/`.
 
 The latest endpoint is polled every 5 minutes. Each response is **merged** into our in-memory store rather than replacing it — the Mesonet API occasionally drops a (different) station per call, and merging keeps a station's last-known timestamp from flickering to "no record" between polls. If a station genuinely stops reporting, its timestamp just ages naturally into the very-stale bin. Dot colors are also refreshed every 30 seconds against the local clock so freshness stays current between API calls.
 

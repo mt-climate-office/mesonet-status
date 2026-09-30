@@ -8,14 +8,34 @@
   'use strict';
 
   // ── Constants ────────────────────────────────────────────────────────────
-  const STATIONS_URL    = 'https://mesonet.climate.umt.edu/api/stations/?type=json';
-  const LATEST_URL      = 'https://mesonet.climate.umt.edu/api/latest/?type=json';
+  // All API reads go to mesonet2 (the CSP connect-src in index.html must
+  // match). The dashboard is a page link, not a fetch, and stays on the old
+  // host: mesonet2's /dash/ 301s to the Pages dashboard and drops the id.
+  const API_BASE        = 'https://mesonet2.climate.umt.edu/api';
+  const STATIONS_URL    = `${API_BASE}/stations/?type=json`;
+  const LATEST_URL      = `${API_BASE}/latest/?type=json`;
   const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
-  const LATEST_FOR_URL  = (s) => `https://mesonet.climate.umt.edu/api/latest/?stations=${encodeURIComponent(s)}`;
+  const LATEST_FOR_URL  = (s) => `${API_BASE}/latest/?stations=${encodeURIComponent(s)}`;
+  // Expected elements (sensors) per station. Returns HTML without type=json.
+  const ELEMENTS_URL    = (s) => `${API_BASE}/elements/${encodeURIComponent(s)}/?type=json`;
 
   // Auto-refresh latest records every 5 min; refresh "minutes since" colors every 30 s
   const LATEST_REFRESH_MS = 5 * 60 * 1000;
   const REPAINT_TICK_MS   =     30 * 1000;
+  // A station is "fresh" (Status mode) / eligible for Operational or Partial
+  // (Health mode) when its latest record is younger than this.
+  const FRESH_MINUTES     = 120;
+
+  // Element lists change only when a station is re-instrumented, so they're
+  // cached in localStorage per station with a 24 h TTL. 245 stations at
+  // concurrency 8 loads in ~10 s cold; the kit's default 60 s fetch timeout
+  // would let one hung request stall a worker for a minute, hence 15 s.
+  const ELEMENTS_CACHE_KEY        = 'mco-status-elements-v1';
+  const ELEMENTS_TTL_MS           = 24 * 60 * 60 * 1000;
+  const ELEMENTS_CONCURRENCY      = 8;
+  const ELEMENTS_TIMEOUT_MS       = 15 * 1000;
+  const ELEMENTS_PERSIST_EVERY    = 40;      // completions between cache writes
+  const HEALTH_REFRESH_DEBOUNCE_MS = 500;    // coalesce rebuilds while lists stream in
 
   // Spider geometry / interaction
   const SPIDER_RADIUS_PX        = 26;     // distance from anchor to spider foot
@@ -38,8 +58,8 @@
   // semantic colors below are read from the --status-* CSS tokens so the
   // popup pills and the map always agree.
   const TIME_BINS = [
-    { max:   60, color: '#2a8a86', label: '< 1 h'  },
-    { max:  180, color: '#84c2a0', label: '1–3 h'  },
+    { max: FRESH_MINUTES, color: '#2a8a86', label: '< 2 h'  },   // same cutoff as Status/Health
+    { max:  180, color: '#84c2a0', label: '2–3 h'  },
     { max:  360, color: '#f4d88e', label: '3–6 h'  },
     { max: 1440, color: '#d4894a', label: '6–24 h' },
     { max: Infinity, color: '#b8421b', label: '> 24 h' },
@@ -48,9 +68,21 @@
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
-  const STATUS_FRESH = cssVar('--status-fresh', '#2a8a86');
-  const STATUS_STALE = cssVar('--status-stale', '#b8421b');
-  const NULL_COLOR   = cssVar('--status-null',  '#9aa3b3');
+  const STATUS_FRESH   = cssVar('--status-fresh',   '#2a8a86');
+  const STATUS_STALE   = cssVar('--status-stale',   '#b8421b');
+  const STATUS_PARTIAL = cssVar('--status-partial', '#f4d88e');
+  const NULL_COLOR     = cssVar('--status-null',    '#9aa3b3');
+
+  // Health mode classes. Operational/outage reuse the Status colors so the two
+  // modes agree on "good" and "bad"; partial takes the roma 3–6 h pale yellow
+  // (already in TIME_BINS), the one ramp member whose lightness separates from
+  // BOTH teal and red — the three classes survive grayscale (HOUSE-STYLE §6).
+  const HEALTH_CLASSES = [
+    { key: 'operational', color: STATUS_FRESH,   label: 'Operational',              short: 'operational'  },
+    { key: 'partial',     color: STATUS_PARTIAL, label: 'Partial — sensor outage',  short: 'partial'      },
+    { key: 'outage',      color: STATUS_STALE,   label: 'Total outage',             short: 'total outage' },
+  ];
+  const healthClass = (key) => HEALTH_CLASSES.find(c => c.key === key) || HEALTH_CLASSES[2];
 
   const bucketKey = (lat, lon) =>
     `${lat.toFixed(BUCKET_PRECISION)},${lon.toFixed(BUCKET_PRECISION)}`;
@@ -68,12 +100,15 @@
   // Push a sentence to the aria-live region so screen-reader users hear
   // "Station X opened" when a popup is shown via click, search, or deep-link.
   const srAnnounceEl = document.getElementById('sr-announce');
+  function announce(text) { if (srAnnounceEl) srAnnounceEl.textContent = text; }
   function announcePopup(stationId) {
     const s = stationById.get(stationId);
-    if (!s || !srAnnounceEl) return;
+    if (!s) return;
     const ts = latestById.get(stationId) ?? null;
     const when = ts == null ? 'no record' : `last reported ${relativeStamp(ts)}`;
-    srAnnounceEl.textContent = `${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}.`;
+    const miss = missingElements(stationId);
+    const health = miss.length ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} not reporting` : '';
+    announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
   }
 
   // Hollow/filled dot stroke — the token exists so the value can't drift from
@@ -89,7 +124,7 @@
   // shared ?station= URL shouldn't land behind a help dialog), and the seen
   // flag is written at open time so an unclosed dialog still counts as seen.
   const urlParams = MCO.urlParams();
-  const DEEP_LINK_PARAMS = ['station', 'mode', 'net', 'scat', 'tcat', 'lng'];
+  const DEEP_LINK_PARAMS = ['station', 'mode', 'net', 'scat', 'tcat', 'hcat', 'lng'];
   const hasDeepLink = DEEP_LINK_PARAMS.some((k) => urlParams.has(k));
   if (!MCO.lsGet('mco-status-seen-intro') && !hasDeepLink) {
     // Defer one tick so the page is rendered before the dialog steals focus.
@@ -120,7 +155,36 @@
   }
   function statusBucket(minSince) {
     if (minSince == null) return 'null';
-    return minSince < 60 ? 'fresh' : 'stale';
+    return minSince < FRESH_MINUTES ? 'fresh' : 'stale';
+  }
+  // Expected elements whose value is null in the station's latest record.
+  // [] when either the element list or the record is unknown — callers that
+  // need to tell "unknown" from "all present" check elementsById.has(id).
+  const _warnedLabels = new Set();
+  function missingElements(stationId) {
+    const rec = latestRecordById.get(stationId);
+    const els = elementsById.get(stationId);
+    if (!rec || !els) return [];
+    return els.filter((el) => {
+      const k = _wideKeyByLabel.get(el.label);
+      if (k == null) {
+        // Verified never to happen for the current API; if it does, the
+        // element can't be checked, so it reads as missing — say so once.
+        if (!_warnedLabels.has(el.label)) {
+          _warnedLabels.add(el.label);
+          console.warn(`No /latest/ column for element "${el.label}" (${el.code})`);
+        }
+        return true;
+      }
+      return rec[k] == null;
+    });
+  }
+  // Health class: outage when there's no fresh record; otherwise partial if
+  // any expected sensor is silent. A station whose element list hasn't loaded
+  // (or failed) reads as operational — the legend note keeps that visible.
+  function healthKey(stationId, minSince) {
+    if (minSince == null || minSince >= FRESH_MINUTES) return 'outage';
+    return elementsById.has(stationId) && missingElements(stationId).length ? 'partial' : 'operational';
   }
   // Discrete bin index for time-since mode: '0'..'4' for TIME_BINS, or 'null'.
   // Strings, so the same value type covers both modes in URL params + filters.
@@ -134,7 +198,18 @@
   // ── State ────────────────────────────────────────────────────────────────
   let stations    = [];                       // raw /api/stations response
   let latestById  = new Map();                // station id → datetime ms
+  let latestRecordById = new Map();           // station id → full wide /latest/ record
   let stationById = new Map();                // station id → meta object
+  // Health-mode inputs. elementsById holds the expected sensors per station
+  // (deduped, sorted by sort_order); a station absent from it is "not loaded
+  // yet" — elementsFailed tells that apart from "fetch failed this session".
+  let elementsById   = new Map();             // station id → [{code, label}]
+  let elementsFailed = new Set();
+  let _elementsProgress = { done: 0, total: 0, loading: false };
+  // description_short → wide-record key ("Soil VWC @ -91 cm" → "Soil VWC @ -91 cm [%]").
+  // Wide keys are the union across stations, so one record's keys suffice;
+  // rebuilt per /latest/ payload so the 30 s tick never scans strings.
+  let _wideKeyByLabel = new Map();
   let bucketById  = new Map();                // station id → bucket key
   // Dynamic colocation indices — recomputed every rebuildSource() based on
   // the currently-visible sub-networks. Hidden-network stations are excluded.
@@ -178,10 +253,13 @@
   const KNOWN_NETWORKS = ['HydroMet', 'AgriMet'];
   const networkByLowerName = new Map(KNOWN_NETWORKS.map(n => [n.toLowerCase(), n]));
 
+  // Mode ids double as URL/localStorage values; MODES (below) is the whitelist.
+  const MODE_IDS = ['status', 'timesince', 'health'];
   let activeMode = (() => {
     const u = getLower('mode');
-    if (u === 'status' || u === 'timesince') return u;
-    return MCO.lsGet('mco-status-mode') === 'timesince' ? 'timesince' : 'status';
+    if (MODE_IDS.includes(u)) return u;
+    const saved = MCO.lsGet('mco-status-mode');
+    return MODE_IDS.includes(saved) ? saved : 'status';
   })();
 
   let activeNetworks = (() => {
@@ -210,17 +288,25 @@
   // Each mode has its own visible-category set. Missing URL param = all visible.
   const ALL_STATUS_CATS = ['fresh', 'stale', 'null'];
   const ALL_TIME_CATS   = ['0', '1', '2', '3', '4', 'null'];
+  // No 'null' in health: a station with no record IS a total outage.
+  const ALL_HEALTH_CATS = HEALTH_CLASSES.map(c => c.key);
   function parseCatSet(urlKey, allKeys) {
     const tokens = MCO.splitTokens(urlParams.get(urlKey));
     if (tokens === null) return new Set(allKeys);
     const set = new Set(tokens.filter(k => allKeys.includes(k)));
     return set.size ? set : new Set();   // an explicit empty list = nothing visible
   }
-  const visibleStatusCats = parseCatSet('scat', ALL_STATUS_CATS);
-  const visibleTimeCats   = parseCatSet('tcat', ALL_TIME_CATS);
-  function currentCats()    { return activeMode === 'status' ? visibleStatusCats : visibleTimeCats; }
-  function currentAllCats() { return activeMode === 'status' ? ALL_STATUS_CATS   : ALL_TIME_CATS; }
-  function currentCatKey()  { return activeMode === 'status' ? 'staleStatus'     : 'timeBinKey'; }
+  // One row per mode: its category universe, the live visible set, the
+  // feature property the layer filter reads, and the URL param that mirrors
+  // the set. Adding a mode is adding a row.
+  const MODES = {
+    status:    { all: ALL_STATUS_CATS, cats: parseCatSet('scat', ALL_STATUS_CATS), prop: 'staleStatus', param: 'scat', title: 'Reporting status' },
+    timesince: { all: ALL_TIME_CATS,   cats: parseCatSet('tcat', ALL_TIME_CATS),   prop: 'timeBinKey',  param: 'tcat', title: 'Time since last record' },
+    health:    { all: ALL_HEALTH_CATS, cats: parseCatSet('hcat', ALL_HEALTH_CATS), prop: 'healthKey',   param: 'hcat', title: 'Station health' },
+  };
+  function currentCats()    { return MODES[activeMode].cats; }
+  function currentAllCats() { return MODES[activeMode].all; }
+  function currentCatKey()  { return MODES[activeMode].prop; }
 
   let _selectedStation = _initStation;
 
@@ -417,16 +503,24 @@
     if (mode === 'status') {
       return ['case',
         ['==', ['get', 'minutesSince'], null], NULL_COLOR,
-        ['<',  ['get', 'minutesSince'], 60],   STATUS_FRESH,
+        ['<',  ['get', 'minutesSince'], FRESH_MINUTES], STATUS_FRESH,
         STATUS_STALE,
+      ];
+    }
+    if (mode === 'health') {
+      // Categorical: healthKey is computed in JS at emit time (it needs the
+      // element lists), so no time math in the expression.
+      return ['match', ['get', 'healthKey'],
+        ...HEALTH_CLASSES.flatMap(c => [c.key, c.color]),
+        NULL_COLOR,
       ];
     }
     // time-since 5-bin step
     return ['case',
       ['==', ['get', 'minutesSince'], null], NULL_COLOR,
       ['step', ['get', 'minutesSince'],
-        TIME_BINS[0].color,                     // < 60
-        TIME_BINS[0].max, TIME_BINS[1].color,   // 60+
+        TIME_BINS[0].color,                     // < FRESH_MINUTES
+        TIME_BINS[0].max, TIME_BINS[1].color,   // FRESH_MINUTES+
         TIME_BINS[1].max, TIME_BINS[2].color,   // 180+
         TIME_BINS[2].max, TIME_BINS[3].color,   // 360+
         TIME_BINS[3].max, TIME_BINS[4].color,   // 1440+
@@ -542,8 +636,12 @@
         MCO.fetchJSON(LATEST_URL,   { cache: 'no-store' }),
       ]);
       stations = st;
-      latestById = new Map(latest.map(r => [r.station, r.datetime]));
+      ingestLatest(latest);
       indexStations();
+      // Seed element lists from the localStorage cache BEFORE the first
+      // rebuild so a warm cache paints health on the first frame; the
+      // network fill for missing/expired stations streams in afterwards.
+      loadElements();
       buildFilterUI();
       populateSearch();
       rebuildSource();
@@ -568,21 +666,150 @@
   async function refreshLatest() {
     try {
       const latest = await MCO.fetchJSON(LATEST_URL, { cache: 'no-store' });
-      // Merge rather than replace: the Mesonet /api/latest/ endpoint drops a
-      // (different) station from each call ~once per poll. Without a merge,
-      // those stations would flicker to "no record" until the next poll
-      // happened to include them. With a merge, a station's last-known
-      // timestamp persists; if it's truly gone silent, the timestamp just
-      // ages into the very-stale bin on its own.
-      for (const r of latest) {
-        latestById.set(r.station, r.datetime);
-      }
+      ingestLatest(latest);
+      // Retry any element lists that failed earlier (no-op when all loaded).
+      loadElements();
       rebuildSource();
       refreshStamp();
     } catch (err) {
       console.error(err);
       MCO.showToast(`Refresh failed: ${err.message}`);
     }
+  }
+
+  // Merge rather than replace: the Mesonet /api/latest/ endpoint drops a
+  // (different) station from each call ~once per poll. Without a merge,
+  // those stations would flicker to "no record" until the next poll
+  // happened to include them. With a merge, a station's last-known
+  // record persists; if it's truly gone silent, the timestamp just ages
+  // into the very-stale bin (and Health's outage class) on its own.
+  function ingestLatest(latest) {
+    for (const r of latest) {
+      latestById.set(r.station, r.datetime);
+      latestRecordById.set(r.station, r);
+    }
+    // Wide keys are the union of every station's columns, so any one record
+    // carries them all. Map each element label to its "<label> [unit]" key.
+    if (latest.length) {
+      const keys = Object.keys(latest[0]);
+      const byLabel = new Map();
+      for (const k of keys) {
+        const i = k.lastIndexOf(' [');
+        if (i > 0 && !byLabel.has(k.slice(0, i))) byLabel.set(k.slice(0, i), k);
+      }
+      _wideKeyByLabel = byLabel;
+    }
+  }
+
+  // ── Expected element lists (Health mode) ─────────────────────────────────
+  // Cache shape: { v: 1, byStation: { [id]: { t: fetchedMs, els: [[code, label], …] } } }
+  // — arrays, not objects, keep ~245 stations under ~200 KB on the github.io
+  // origin this app shares with other MCO apps. Per-station timestamps so a
+  // re-instrumented station expires alone.
+  function readElementsCache() {
+    try {
+      const raw = MCO.lsGet(ELEMENTS_CACHE_KEY);
+      const obj = raw ? JSON.parse(raw) : null;
+      if (!obj || obj.v !== 1 || typeof obj.byStation !== 'object') return {};
+      return obj.byStation;
+    } catch { return {}; }
+  }
+  function writeElementsCache(byStation) {
+    MCO.lsSet(ELEMENTS_CACHE_KEY, JSON.stringify({ v: 1, byStation }));
+  }
+  function setElements(stationId, els) {
+    elementsById.set(stationId, els);
+    elementsFailed.delete(stationId);
+  }
+  // Dedupe (the endpoint repeats rows), sort by the API's display order.
+  function normalizeElements(rows) {
+    const byCode = new Map();
+    for (const r of rows) {
+      if (!r || typeof r.element !== 'string' || typeof r.description_short !== 'string') continue;
+      if (!byCode.has(r.element)) byCode.set(r.element, { code: r.element, label: r.description_short, order: r.sort_order ?? 0 });
+    }
+    return [...byCode.values()]
+      .sort((a, b) => a.order - b.order || a.code.localeCompare(b.code))
+      .map(({ code, label }) => ({ code, label }));
+  }
+
+  // Run `fn` over `items` with at most `limit` in flight. No library: a shared
+  // cursor and Math.min(limit, n) async workers.
+  async function mapLimit(items, limit, fn) {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (cursor < items.length) {
+        const item = items[cursor++];
+        await fn(item);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  let _elementsInFlight = false;
+  async function loadElements() {
+    if (_elementsInFlight) return;
+    const cache = readElementsCache();
+    const now = Date.now();
+    // 1. Seed from cache synchronously (fresh entries only).
+    for (const s of stations) {
+      const entry = cache[s.station];
+      if (!entry || !Array.isArray(entry.els)) continue;
+      if (now - (entry.t || 0) > ELEMENTS_TTL_MS) continue;
+      if (!elementsById.has(s.station)) {
+        setElements(s.station, entry.els.map(([code, label]) => ({ code, label })));
+      }
+    }
+    // 2. Fetch whatever is missing or expired.
+    const needed = stations.map(s => s.station).filter(id => !elementsById.has(id));
+    _elementsProgress = { done: 0, total: needed.length, loading: needed.length > 0 };
+    renderLegendNote();
+    if (!needed.length) return;
+
+    _elementsInFlight = true;
+    const failedBefore = elementsFailed.size;
+    let sinceWrite = 0;
+    try {
+      await mapLimit(needed, ELEMENTS_CONCURRENCY, async (id) => {
+        try {
+          const rows = await MCO.fetchJSON(ELEMENTS_URL(id), { timeoutMs: ELEMENTS_TIMEOUT_MS });
+          const els = normalizeElements(Array.isArray(rows) ? rows : []);
+          setElements(id, els);
+          cache[id] = { t: Date.now(), els: els.map(e => [e.code, e.label]) };
+          if (++sinceWrite >= ELEMENTS_PERSIST_EVERY) { sinceWrite = 0; writeElementsCache(cache); }
+        } catch (err) {
+          elementsFailed.add(id);
+          console.warn(`elements/${id} failed:`, err.message);
+        }
+        _elementsProgress.done++;
+        renderLegendNote();           // cheap text update per completion
+        scheduleHealthRefresh();      // coalesced dot/count rebuild
+      });
+    } finally {
+      _elementsInFlight = false;
+      _elementsProgress.loading = false;
+      writeElementsCache(cache);
+      scheduleHealthRefresh();
+      const failed = elementsFailed.size;
+      if (failed && failed !== failedBefore) {
+        MCO.showToast(`Sensor lists unavailable for ${failed} station${failed === 1 ? '' : 's'}`, 6000);
+      }
+      const partial = countHealth().partial;
+      announce(`Sensor check complete: ${partial} station${partial === 1 ? '' : 's'} with sensors not reporting.`);
+    }
+  }
+
+  // Batches of element lists land many times a second while loading; rebuild
+  // the source (dots, counts, SR table) at most every 500 ms, and refresh an
+  // open popup so its sensor list isn't stale.
+  let _healthRefreshTimer = null;
+  function scheduleHealthRefresh() {
+    if (_healthRefreshTimer) return;
+    _healthRefreshTimer = setTimeout(() => {
+      _healthRefreshTimer = null;
+      rebuildSource();
+      if (_popup && _selectedStation) _popup.setHTML(popupHTML(_selectedStation));
+    }, HEALTH_REFRESH_DEBOUNCE_MS);
   }
 
   function refreshStamp() {
@@ -661,6 +888,8 @@
             minutesSince:    mins,
             staleStatus:     statusBucket(mins),
             timeBinKey:      timeBinKey(mins),
+            healthKey:       healthKey(s.station, mins),
+            missingCount:    missingElements(s.station).length,
             colocationCount: members.length,
             colocationIndex: bucketIndex.get(s.station),
             bucket:          k,
@@ -670,6 +899,7 @@
     }
     map.getSource('stations').setData({ type: 'FeatureCollection', features });
     renderSRTable();
+    refreshLegendCounts();
 
     // If a spider is open, refresh its feet — the bucket's anchor or membership
     // may have just changed.
@@ -689,18 +919,62 @@
         : statusBucket(mins) === 'fresh' ? 'reporting' : 'stale';
       const when = ts == null ? 'no record'
         : `${MCO.formatStampMT(ts)} (${relativeStamp(ts)})`;
+      const health = healthClass(healthKey(s.station, mins)).short;
+      const miss = missingElements(s.station);
+      const missTxt = miss.length ? miss.map(e => e.label).join(', ')
+        : elementsById.has(s.station) ? '—'
+        : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading';
       return `<tr><th scope="row">${MCO.escapeHTML(s.name)} (${MCO.escapeHTML(s.station)})</th>` +
         `<td>${MCO.escapeHTML(s.sub_network || '—')}</td>` +
         `<td>${status}</td>` +
         `<td>${MCO.escapeHTML(when)}</td>` +
+        `<td>${MCO.escapeHTML(health)}</td>` +
+        `<td>${MCO.escapeHTML(missTxt)}</td>` +
         `<td>${MCO.escapeHTML(s.county || '—')}</td></tr>`;
     }).join('');
     srTableEl.innerHTML =
       '<caption>Montana Mesonet stations currently shown on the map</caption>' +
       '<thead><tr><th scope="col">Station</th><th scope="col">Network</th>' +
       '<th scope="col">Status</th><th scope="col">Last report (Mountain Time)</th>' +
+      '<th scope="col">Health</th><th scope="col">Sensors not reporting</th>' +
       '<th scope="col">County</th></tr></thead>' +
       `<tbody>${rows}</tbody>`;
+  }
+
+  // ── Health bookkeeping ───────────────────────────────────────────────────
+  // Counts run over the visible-network stations (bucketMembers), never
+  // filtered by the legend toggles.
+  function countHealth() {
+    const counts = { operational: 0, partial: 0, outage: 0, total: 0, unknown: 0 };
+    for (const members of bucketMembers.values()) {
+      for (const s of members) {
+        const mins = minutesSince(latestById.get(s.station) ?? null);
+        const key = healthKey(s.station, mins);
+        counts[key]++;
+        counts.total++;
+        if (key !== 'outage' && !elementsById.has(s.station)) counts.unknown++;
+      }
+    }
+    return counts;
+  }
+
+  // Legend footer note, Health mode only: progress while element lists stream
+  // in, then how many fresh stations lack a list (they count as operational).
+  // Not aria-live — it'd chatter; the one-time completion goes to #sr-announce.
+  function renderLegendNote() {
+    const el = document.getElementById('legend-note');
+    if (!el) return;
+    let txt = '';
+    if (activeMode === 'health' && stations.length) {
+      if (_elementsProgress.loading) {
+        txt = `Checking sensors… ${_elementsProgress.done}/${_elementsProgress.total}`;
+      } else {
+        const u = countHealth().unknown;
+        if (u) txt = `${u} station${u === 1 ? '' : 's'} without sensor list`;
+      }
+    }
+    el.textContent = txt;
+    el.hidden = !txt;
   }
 
   // ── Sub-network filter UI (chip toggles in navbar) ───────────────────────
@@ -934,17 +1208,37 @@
     const installed = (typeof s.date_installed === 'number')
       ? MCO.formatDateMT(s.date_installed)
       : '—';
+    // Health pill + the sensors behind a "partial" verdict. Only shown when
+    // the station is fresh: a stale station's sensor list is moot.
+    const hKey = healthKey(stationId, mins);
+    const miss = missingElements(stationId);
+    const hLbl = hKey === 'partial'
+      ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
+      : healthClass(hKey).short;
+    const healthPill = hKey === 'outage' && status === 'null' ? ''   // "no data" already says it
+      : `<span class="pop-pill ${hKey}">${hLbl}</span>`;
+    let missingBlock = '';
+    if (hKey !== 'outage') {
+      if (miss.length) {
+        missingBlock = `<div class="pop-missing"><strong>Sensors not reporting</strong>` +
+          `<ul>${miss.map(e => `<li>${MCO.escapeHTML(e.label)}</li>`).join('')}</ul></div>`;
+      } else if (!elementsById.has(stationId)) {
+        missingBlock = `<div class="pop-missing pop-missing-note">${
+          elementsFailed.has(stationId) ? 'Sensor list unavailable' : 'Checking sensors…'}</div>`;
+      }
+    }
     return `
       <div class="pop-title">${MCO.escapeHTML(s.name)}</div>
       <div class="pop-sub">${MCO.escapeHTML(s.station)}</div>
       <div style="margin-top:6px">
         <span class="pop-badge">${MCO.escapeHTML(s.sub_network || '—')}</span>
-        <span class="pop-pill ${pillCls}">${pillLbl}</span>
+        <span class="pop-pill ${pillCls}">${pillLbl}</span>${healthPill}
       </div>
       <div class="pop-stamp">
         <div>${stampAbs}</div>
         <div style="color:var(--text-muted)">${stampRel}</div>
       </div>
+      ${missingBlock}
       <div class="pop-meta">
         <div><strong>County:</strong> ${MCO.escapeHTML(s.county || '—')}</div>
         <div><strong>Elevation:</strong> ${elev}</div>
@@ -1027,6 +1321,8 @@
           minutesSince: mins,
           staleStatus: statusBucket(mins),
           timeBinKey:  timeBinKey(mins),
+          healthKey:   healthKey(sid, mins),
+          missingCount: missingElements(sid).length,
           colocationCount: 1,
           colocationIndex: 0,
           bucket: _spiderBucket,
@@ -1072,8 +1368,9 @@
     if (activeNetworks.size !== KNOWN_NETWORKS.length) {
       params.net = [...activeNetworks].map(n => n.toLowerCase()).join(' ');
     }
-    if (visibleStatusCats.size !== ALL_STATUS_CATS.length) params.scat = [...visibleStatusCats].join(' ');
-    if (visibleTimeCats.size   !== ALL_TIME_CATS.length)   params.tcat = [...visibleTimeCats].join(' ');
+    for (const m of Object.values(MODES)) {
+      if (m.cats.size !== m.all.length) params[m.param] = [...m.cats].join(' ');
+    }
     if (labelsOn) params.labels = 'on';
     if (legendCtl && legendCtl.isCollapsed()) params.legend = 'collapsed';
     const theme = MCO.getTheme();
@@ -1157,10 +1454,14 @@
       ? `<span class="tooltip-time">no record</span>`
       : `<span class="tooltip-time">${MCO.escapeHTML(MCO.formatStampMT(ts))}</span>` +
         `<span class="tooltip-rel">${MCO.escapeHTML(relativeStamp(ts))}</span>`;
+    const miss = healthKey(stationId, minutesSince(ts)) === 'partial' ? missingElements(stationId).length : 0;
+    const healthRow = miss
+      ? `<span class="tooltip-health">${miss} sensor${miss === 1 ? '' : 's'} not reporting</span>`
+      : '';
     tooltipEl.innerHTML =
       `<span class="tooltip-name">${MCO.escapeHTML(s.name)}</span>` +
       `<span class="tooltip-sub">${MCO.escapeHTML(s.station)}</span>` +
-      timeRow;
+      timeRow + healthRow;
     tooltipEl.classList.add('visible');
     tooltipEl.style.left = `${e.originalEvent.clientX + 14}px`;
     tooltipEl.style.top  = `${e.originalEvent.clientY + 14}px`;
@@ -1255,18 +1556,21 @@
   });
 
   // ── Mode toggle ──────────────────────────────────────────────────────────
+  // Single entry point for mode changes.
+  function setMode(mode) {
+    if (!MODES[mode] || mode === activeMode) return;
+    activeMode = mode;
+    MCO.lsSet('mco-status-mode', activeMode);
+    for (const b of document.querySelectorAll('.seg-btn[data-mode]')) {
+      b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
+    }
+    refreshDotColors();
+    applyAllFilters();  // category filter belongs to the active mode
+    pushState();
+  }
   for (const btn of document.querySelectorAll('.seg-btn[data-mode]')) {
     btn.setAttribute('aria-pressed', btn.dataset.mode === activeMode ? 'true' : 'false');
-    btn.addEventListener('click', () => {
-      activeMode = btn.dataset.mode;
-      MCO.lsSet('mco-status-mode', activeMode);
-      for (const b of document.querySelectorAll('.seg-btn[data-mode]')) {
-        b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
-      }
-      refreshDotColors();
-      applyAllFilters();  // category filter belongs to the active mode
-      pushState();
-    });
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
   }
 
   // ── Labels toggle ────────────────────────────────────────────────────────
@@ -1324,17 +1628,21 @@
 
   function renderLegend() {
     legendRowsEl.innerHTML = '';
+    // Every row gets a live count + share (refreshLegendCounts); the counts
+    // ignore the toggles, so a hidden category still reports its number.
     const rows = activeMode === 'status'
       ? [
-          { key: 'fresh', color: STATUS_FRESH, label: 'Reported < 1 h ago' },
-          { key: 'stale', color: STATUS_STALE, label: 'Stale (≥ 1 h)' },
+          { key: 'fresh', color: STATUS_FRESH, label: 'Reported < 2 h ago' },
+          { key: 'stale', color: STATUS_STALE, label: 'Stale (≥ 2 h)' },
           { key: 'null',  color: NULL_COLOR,   label: 'No record' },
         ]
+      : activeMode === 'health'
+      ? HEALTH_CLASSES.map(c => ({ key: c.key, color: c.color, label: c.label }))
       : [
           ...TIME_BINS.map((b, i) => ({ key: String(i), color: b.color, label: b.label })),
           { key: 'null', color: NULL_COLOR, label: 'No record' },
         ];
-    legendTitleEl.textContent = activeMode === 'status' ? 'Reporting status' : 'Time since last record';
+    legendTitleEl.textContent = MODES[activeMode].title;
     const set = currentCats();
     for (const r of rows) {
       const row = document.createElement('button');
@@ -1351,8 +1659,13 @@
       const lb = document.createElement('span');
       lb.className = 'legend-lbl';
       lb.textContent = r.label;
-      row.appendChild(sw);
-      row.appendChild(lb);
+      // Live count + share of the visible-network stations, filled by
+      // refreshLegendCounts() (also on every rebuildSource tick).
+      const n = document.createElement('span');
+      n.className = 'legend-count';
+      const pct = document.createElement('span');
+      pct.className = 'legend-pct';
+      row.append(sw, lb, n, pct);
       attachLegendHandlers(row, r.key);
       legendRowsEl.appendChild(row);
     }
@@ -1360,6 +1673,43 @@
     hint.className = 'legend-hint';
     hint.textContent = 'Click to toggle · Double-click to isolate';
     legendRowsEl.appendChild(hint);
+    // Health mode only: sensor-list load progress / stations without a list.
+    const note = document.createElement('div');
+    note.className = 'legend-note';
+    note.id = 'legend-note';
+    note.hidden = true;
+    legendRowsEl.appendChild(note);
+    refreshLegendCounts();
+  }
+
+  // Per-category counts for the active mode over the visible-network stations
+  // (bucketMembers), NOT filtered by the legend toggles — hiding a
+  // category must not zero its count.
+  function legendCounts() {
+    const prop = currentCatKey();
+    const counts = {};
+    let total = 0;
+    for (const members of bucketMembers.values()) {
+      for (const s of members) {
+        const mins = minutesSince(latestById.get(s.station) ?? null);
+        const key = prop === 'staleStatus' ? statusBucket(mins)
+          : prop === 'timeBinKey' ? timeBinKey(mins)
+          : healthKey(s.station, mins);
+        counts[key] = (counts[key] || 0) + 1;
+        total++;
+      }
+    }
+    return { counts, total };
+  }
+  function refreshLegendCounts() {
+    if (!stations.length) return;   // before data: rows show labels only
+    const { counts, total } = legendCounts();
+    for (const row of legendRowsEl.querySelectorAll('.legend-row')) {
+      const n = counts[row.dataset.catKey] || 0;
+      row.querySelector('.legend-count').textContent = String(n);
+      row.querySelector('.legend-pct').textContent = total ? `(${Math.round((n / total) * 100)}%)` : '';
+    }
+    renderLegendNote();
   }
 
   function refreshLegendVisuals() {
