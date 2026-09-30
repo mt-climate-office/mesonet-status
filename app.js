@@ -17,7 +17,12 @@
   const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
   const LATEST_FOR_URL  = (s) => `${API_BASE}/latest/?stations=${encodeURIComponent(s)}`;
   // Expected elements (sensors) per station. Returns HTML without type=json.
-  const ELEMENTS_URL    = (s) => `${API_BASE}/elements/${encodeURIComponent(s)}/?type=json`;
+  // The bulk form (?all=true, mesonet-db-rds PR #175) answers for every
+  // station in one response with a leading `station` column; an API that
+  // predates it ignores the flag and returns the bare catalog, which has no
+  // `station` column — that absence is the signal to fall back per station.
+  const ELEMENTS_ALL_URL = `${API_BASE}/elements/?all=true&type=json`;
+  const ELEMENTS_URL     = (s) => `${API_BASE}/elements/${encodeURIComponent(s)}/?type=json`;
 
   // Auto-refresh latest records every 5 min; refresh "minutes since" colors every 30 s
   const LATEST_REFRESH_MS = 5 * 60 * 1000;
@@ -761,7 +766,7 @@
       }
     }
     // 2. Fetch whatever is missing or expired.
-    const needed = stations.map(s => s.station).filter(id => !elementsById.has(id));
+    let needed = stations.map(s => s.station).filter(id => !elementsById.has(id));
     _elementsProgress = { done: 0, total: needed.length, loading: needed.length > 0 };
     renderLegendNote();
     if (!needed.length) return;
@@ -770,6 +775,25 @@
     const failedBefore = elementsFailed.size;
     let sinceWrite = 0;
     try {
+      // 2a. One bulk request for the whole network. Every station the bulk
+      // listing knows about is filled from it (a station absent from the
+      // listing carries no open deployments → empty list, not a failure).
+      // Anything that isn't a bulk payload falls through to per-station.
+      const bulk = await loadElementsBulk();
+      if (bulk) {
+        const t = Date.now();
+        for (const id of needed) {
+          const els = bulk.get(id) || [];
+          setElements(id, els);
+          cache[id] = { t, els: els.map(e => [e.code, e.label]) };
+        }
+        _elementsProgress.done = needed.length;
+        needed = [];
+        renderLegendNote();
+        scheduleHealthRefresh();
+      }
+
+      // 2b. Per-station fallback (older API, or the bulk request failed).
       await mapLimit(needed, ELEMENTS_CONCURRENCY, async (id) => {
         try {
           const rows = await MCO.fetchJSON(ELEMENTS_URL(id), { timeoutMs: ELEMENTS_TIMEOUT_MS });
@@ -796,6 +820,27 @@
       }
       const partial = countHealth().partial;
       announce(`Sensor check complete: ${partial} station${partial === 1 ? '' : 's'} with sensors not reporting.`);
+    }
+  }
+
+  // GET /elements/?all=true → Map<station, [{code,label}]>, or null when the
+  // response isn't the bulk shape (older API ignores the flag and returns the
+  // catalog without a `station` column) or the request fails.
+  async function loadElementsBulk() {
+    try {
+      const rows = await MCO.fetchJSON(ELEMENTS_ALL_URL, { timeoutMs: ELEMENTS_TIMEOUT_MS });
+      if (!Array.isArray(rows) || !rows.length || typeof rows[0].station !== 'string') return null;
+      const byStation = new Map();
+      for (const r of rows) {
+        let arr = byStation.get(r.station);
+        if (!arr) { arr = []; byStation.set(r.station, arr); }
+        arr.push(r);
+      }
+      for (const [id, arr] of byStation) byStation.set(id, normalizeElements(arr));
+      return byStation;
+    } catch (err) {
+      console.warn('elements?all=true unavailable, falling back per station:', err.message);
+      return null;
     }
   }
 
