@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Generate assets/og-card.png by screenshotting the live GitHub Pages site at
-1200×630 (the og:image size; larger cards are rejected by Teams).
+Generate assets/og-card.png by screenshotting the live GitHub Pages site: a
+1200×630 viewport (the og:image aspect) at 2× DPR, giving a 2400×1260 card.
+Teams once dropped cards this large (c91d621); check a Teams unfurl if the
+preview goes missing there.
 
 ?mode=status is a deep-link param, so it pins the Status view and suppresses
 the first-visit help dialog without touching the app. The card is the page
@@ -30,7 +32,7 @@ def main() -> None:
         browser = p.chromium.launch()
         ctx = browser.new_context(
             viewport={"width": 1200, "height": 630},
-            device_scale_factor=1,
+            device_scale_factor=2,  # 2400×1260 output
             color_scheme="light",
         )
         page = ctx.new_page()
