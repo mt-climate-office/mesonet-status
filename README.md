@@ -97,6 +97,18 @@ Published via [GitHub Pages](https://pages.github.com) from the `main` branch. T
 2. Repo → Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main / (root)**.
 3. Site goes live at `https://<owner>.github.io/mesonet-status/` within a minute or two. Add a `CNAME` file later if you want a custom subdomain.
 
+### Social preview image
+
+`.github/workflows/preview.yml` runs nightly (and on manual dispatch) and **commits `assets/og-card.png` back to `main`** — always pull/rebase before pushing, or you race it.
+
+`scripts/generate_preview.py` screenshots the live Pages site at 1200×630 (the `og:image` size) with `?mode=status`, which pins the Status view and, as a deep link, keeps the first-visit help dialog closed. It waits for the `#refresh-stamp` text to read `refreshed …` and then 4 seconds for tiles to paint — that param, element id and stamp text are a contract with the script. Run it locally to check:
+
+```sh
+pip install playwright
+playwright install --with-deps chromium
+python scripts/generate_preview.py
+```
+
 ## Tooling
 
 - [MapLibre GL JS](https://maplibre.org) v5.18 via CDN.
