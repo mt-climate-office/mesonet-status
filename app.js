@@ -884,6 +884,7 @@
       _healthRefreshTimer = null;
       rebuildSource();
       if (_popup && _selectedStation) _popup.setDOMContent(popupNode(_selectedStation));
+      if (_sheetFor) fillSheet(_sheetFor);
     }, HEALTH_REFRESH_DEBOUNCE_MS);
   }
 
@@ -1212,7 +1213,8 @@
     if (text != null) e.textContent = text;
     return e;
   }
-  function popupNode(stationId) {
+  // inSheet: the sheet's own <h2> carries the name, so the content skips it.
+  function popupNode(stationId, inSheet) {
     const s = stationById.get(stationId);
     if (!s) return document.createDocumentFragment();
     const ts = latestById.get(stationId) ?? null;
@@ -1222,7 +1224,7 @@
     const elev = (typeof s.elevation === 'number') ? `${s.elevation.toFixed(0)} m` : null;
     const installed = (typeof s.date_installed === 'number') ? MCO.formatDateMT(s.date_installed) : null;
     const frag = MCO.map.popupContent({
-      title: s.name,
+      title: inSheet ? null : s.name,
       subtitle: s.station,
       facts: [['County', s.county], ['Elevation', elev], ['Installed', installed]],
       actions: [
@@ -1247,6 +1249,7 @@
     }
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
+    stamp.dataset.peek = '';   // the sheet's peek detent shows down to here
     root.insertBefore(tags, before);
     root.insertBefore(stamp, before);
 
@@ -1267,11 +1270,45 @@
     return frag;
   }
 
+  // ── Station detail: bottom sheet on compact (kit 0.9.0) ─────────────────
+  // Below the compact edge an anchored popup covers the very map it points
+  // at; the station opens in MCO.initSheet instead (peek, drag/grip to full),
+  // with the same popupContent body.
+  const sheetEl    = document.getElementById('station-sheet');
+  const sheetTitle = document.getElementById('station-sheet-title');
+  const sheetBody  = sheetEl.querySelector('.mco-sheet-body');
+  let _sheetFor = null;                       // station shown in the sheet, or null
+  MCO.metrics.observe('--chrome-h', document.getElementById('navbar'));
+  const sheet = MCO.initSheet({
+    sheet: sheetEl,
+    onState: (state) => {
+      // Closed by the user (×, Esc, drag down): clear the selection.
+      if (state === 'closed' && _sheetFor) {
+        _sheetFor = null;
+        _selectedStation = null;
+        pushState();
+      }
+    },
+  });
+  function fillSheet(stationId) {
+    sheetTitle.textContent = stationById.get(stationId).name;
+    sheetBody.replaceChildren(popupNode(stationId, true));
+  }
+
   function openPopupFor(stationId, lngLat) {
     const s = stationById.get(stationId);
     if (!s) return;
     if (_popup) { _suppressNextPopupClose = true; _popup.remove(); _popup = null; }
     _selectedStation = stationId;
+    if (MCO.viewport.isCompact()) {
+      _sheetFor = stationId;
+      fillSheet(stationId);
+      sheet.open('peek');
+      announcePopup(stationId);
+      pushState();
+      return;
+    }
+    if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
     const p = new maplibregl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
       .setLngLat(lngLat || [s.longitude, s.latitude])
       .setDOMContent(popupNode(stationId))
@@ -1414,10 +1451,13 @@
   // (so we don't pushState for an open-replace; the new popup pushes its own state).
   let _suppressNextPopupClose = false;
   function closePopup() {
-    if (!_popup) return;
-    _suppressNextPopupClose = true;
-    _popup.remove();
-    _popup = null;
+    if (!_popup && !_sheetFor) return;
+    if (_popup) {
+      _suppressNextPopupClose = true;
+      _popup.remove();
+      _popup = null;
+    }
+    if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
     if (_selectedStation) {
       _selectedStation = null;
       pushState();

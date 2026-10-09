@@ -421,6 +421,17 @@
       </div>
     </aside>
   </div>
+
+  <!-- Station detail on compact viewports (MCO.initSheet, kit 0.9.0): peek /
+       full detents, drag or grip; desktop keeps the anchored popup. -->
+  <section class="mco-sheet" id="station-sheet" aria-labelledby="station-sheet-title" data-state="closed" hidden>
+    <div class="mco-sheet-head">
+      <button type="button" class="mco-sheet-grip" aria-label="Expand details" aria-expanded="false"></button>
+      <h2 class="mco-sheet-title" id="station-sheet-title" tabindex="-1"></h2>
+      <button type="button" class="modal-close" data-close-sheet aria-label="Close">×</button>
+    </div>
+    <div class="mco-sheet-body"></div>
+  </section>
 </main>
 
 <!-- Screen-reader table twin of the WebGL station layer (HOUSE-STYLE §5.2):

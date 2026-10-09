@@ -13,6 +13,9 @@ import { load } from '../mco-web-style/tools/verify/lib.mjs';
 
 const STATION = 'aceabsar';   // a real id from /api/stations/
 const rows = () => document.querySelectorAll('#sr-station-table tbody tr').length > 100;
+// The station detail: the anchored popup (desktop) or the bottom sheet
+// (compact, kit 0.9.0 MCO.initSheet). Inlined in each page function below —
+// a function passed to the page can't close over this module.
 
 // Pixels in a screenshot of the map close to one of the status colors.
 async function colorPixels(page, hexes) {
@@ -41,7 +44,7 @@ export default {
       name: 'station', query: `?station=${STATION}`,
       // Anchored popup (desktop) or the bottom sheet (compact, kit 0.9.0).
       ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
-        && !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'),
+        && !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
     },
   ],
   exemptTargets: '',
@@ -85,9 +88,9 @@ export default {
     }
     {
       const { page, close } = await open(`?station=${STATION}`, {
-        ready: () => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'),
+        ready: () => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
       });
-      const title = await page.evaluate(() => document.querySelector('.mco-popup-title')?.textContent);
+      const title = await page.evaluate(() => (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent);
       check(`${tag} ?station= opens the station's details (${title})`, !!title);
       const intro = await page.evaluate(() => !!document.querySelector('#info-modal[open]'));
       check(`${tag} deep link suppresses the intro modal`, !intro);
@@ -113,8 +116,8 @@ export default {
       await page.fill('#search-input', 'absar');
       await page.waitForTimeout(300);
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'), null, { timeout: 15000 }).catch(() => {});
-      const st = await page.evaluate(() => ({ title: document.querySelector('.mco-popup-title')?.textContent, q: location.search }));
+      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'), null, { timeout: 15000 }).catch(() => {});
+      const st = await page.evaluate(() => ({ title: (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent, q: location.search }));
       check(`${tag} search → Enter opens the station (${JSON.stringify(st)})`, !!st.title && /station=/.test(st.q));
       await close();
     }
