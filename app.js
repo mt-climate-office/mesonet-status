@@ -1184,7 +1184,23 @@
     onClose: () => searchBox.close(),
   });
 
+  // ── Landscape-phone rail (kit 0.10.0) ─────────────────────────────────────
+  // The drawer beside the rail holds the brand, controls and meta; while it
+  // is open the rest of the page is inert, and Esc / the scrim / the menu
+  // button close it with focus back on the button.
+  const rail = MCO.initNavRail({
+    toggle: document.getElementById('btn-rail-menu'),
+    drawer: document.getElementById('nav-drawer'),
+    scrim: document.getElementById('nav-scrim'),
+  });
+  document.getElementById('btn-rail-search').addEventListener('click', () => rail.open(searchInput));
+  // The info dialog would open under an inert page: close the drawer first
+  // (capture, so it runs before the kit's own opener).
+  btnInfo.addEventListener('click', () => rail.close({ restoreFocus: false }), true);
+
   function selectStation(stationId) {
+    // Picking from the drawer: close it and let the detail take focus.
+    if (rail.isOpen()) rail.close({ restoreFocus: false });
     flyToAndOpen(stationId, { push: true });
     // Collapsed: close the overlay, which returns focus to the toggle. Blurring
     // instead would drop focus to <body>, since the field is display:none once
@@ -1630,6 +1646,7 @@
         t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       if (inField) return;
       e.preventDefault();
+      if (rail.isRail()) { rail.open(searchInput); return; }
       if (searchCollapse.isCollapsed()) { searchCollapse.open(); return; }
       searchInput.focus();
       searchInput.select();

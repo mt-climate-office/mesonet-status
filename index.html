@@ -289,6 +289,13 @@
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
+    /* kit-override: in rail mode (kit 0.10.0, KEEP IN SYNC with
+       MCO.viewport.RAIL_MQ) the compact bottom sheet still starts at left: 0,
+       under the fixed rail, which clips the station name. Start it beside the
+       rail. Kit issue: .mco-sheet doesn't know --rail-w. */
+    @media (max-height: 560px) and (orientation: landscape) {
+      .is-compact .mco-sheet { left: calc(var(--rail-w, 56px) + env(safe-area-inset-left)); }
+    }
   </style>
 </head>
 <body>
@@ -296,14 +303,35 @@
 <!-- Skip link first (WCAG 2.4.1) — mco-web-style snippets/skip-link.html -->
 <a class="mco-skip-link" href="#main">Skip to map</a>
 
-<header id="navbar" class="mco-navbar">
+<!-- data-rail (kit 0.10.0): on a landscape phone the two-row bar would eat
+     a third of the map's height; it becomes a 56px left rail instead, with
+     the brand, controls and meta in .mco-nav-drawer (MCO.initNavRail).
+     Outside rail mode .mco-rail is hidden and the drawer is display:contents,
+     so the bar lays out exactly as before. -->
+<header id="navbar" class="mco-navbar" data-rail>
   <a href="https://climate.umt.edu" target="_blank" rel="noopener noreferrer"
      class="logo-link" aria-label="Montana Climate Office">
     <img src="assets/mco-logo.png" alt="" class="logo-img" width="40" height="40">
   </a>
 
+  <div class="mco-rail">
+    <button type="button" class="nav-btn icon-only" id="btn-rail-menu" aria-label="Menu"
+            aria-controls="nav-drawer" aria-expanded="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <!-- Hot control: search opens the drawer with the field focused. -->
+    <button type="button" class="nav-btn icon-only" id="btn-rail-search" aria-label="Search stations">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </button>
+  </div>
+
   <div class="nav-divider" aria-hidden="true"></div>
 
+  <div class="mco-nav-drawer" id="nav-drawer">
   <div class="brand">
     <h1 class="brand-title">Mesonet Station Status</h1>
     <span class="brand-subtitle">A service of the Montana Climate Office</span>
@@ -384,7 +412,9 @@
     </button>
     <button type="button" class="nav-btn mco-btn-info" id="btn-info" aria-label="About this map">?</button>
   </div>
+  </div>
 </header>
+<div class="mco-scrim" id="nav-scrim" aria-hidden="true" hidden></div>
 
 <main id="main" tabindex="-1">
   <div id="map-container">
