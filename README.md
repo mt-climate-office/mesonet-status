@@ -111,7 +111,8 @@ python scripts/generate_preview.py
 
 ## Tooling
 
-- [MapLibre GL JS](https://maplibre.org) v5.18 via CDN.
+- [MapLibre GL JS](https://maplibre.org) v6.11.2 via CDN (imported by mco-web-style's `MCO.map.loadMapLibre()`; SRI in the import map).
+- [mco-web-style](https://github.com/mt-climate-office/mco-web-style) 0.11.2 (pinned + SRI).
 - [CARTO Basemaps](https://carto.com/basemaps) Positron + Dark Matter (neutral data-vis backdrops, free, no API key).
 - Vanilla JS / HTML / CSS — no bundler, no framework.
 
