@@ -1312,7 +1312,7 @@
       </div>
       <div class="pop-stamp">
         <div>${stampAbs}</div>
-        <div style="color:var(--text-muted)">${stampRel}</div>
+        <div>${stampRel}</div>
       </div>
       ${missingBlock}
       <div class="pop-meta">
