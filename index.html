@@ -205,6 +205,12 @@
       font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted);
       font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
     }
+    .legend-networks {
+      display: flex; gap: 12px; margin-top: 6px; padding: 4px 4px 0;
+      border-top: 1px solid var(--border);
+      font-size: 0.7rem; color: var(--text-secondary);
+    }
+    .legend-network { display: inline-flex; align-items: center; gap: 6px; }
     .legend-hint, .legend-note {
       margin-top: 6px; padding: 0 4px;
       font-size: 0.62rem; font-style: italic;
@@ -449,6 +455,7 @@
         <li><strong>Networks</strong> — chips toggle HydroMet / AgriMet.</li>
         <li><strong>Legend</strong> — click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate.</li>
         <li><strong>Hover</strong> a dot for time since last report; <strong>click</strong> for full details + dashboard link.</li>
+        <li><strong>Shapes</strong> — a filled dot is a HydroMet station, a dot with an orange ring an AgriMet station; the fill is always the status color.</li>
         <li><strong>Numbered dots</strong> — multiple stations share that location. Hover or tap to expand them; click one for its details.</li>
         <li><kbd>Esc</kbd> closes any popup or fan-out.</li>
         <li>Single-key shortcuts can be disabled by adding <code>?kbd=off</code> to the URL (it sticks while you browse).</li>

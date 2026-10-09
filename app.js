@@ -114,8 +114,9 @@
     MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
   }
 
-  // Hollow/filled dot stroke — the token exists so the value can't drift from
-  // the theme (kit §2); MapLibre paints can't read CSS vars, so resolve here.
+  // The --dot-stroke token, for the spider's connector lines (the markers'
+  // own edges come from MCO.map.markerPaint). MapLibre paints can't read CSS
+  // vars, so resolve here.
   function dotStrokeColor() {
     return cssVar('--dot-stroke', document.documentElement.dataset.theme !== 'light' ? '#ffffff' : '#2a2a3a');
   }
@@ -558,18 +559,23 @@
     ];
   }
 
+  // Station markers (HOUSE-STYLE §7, kit 0.9.0): network = SHAPE + color,
+  // data value = fill. MCO.map.markerPaint gives HydroMet a filled circle
+  // with the --dot-stroke edge and AgriMet a hollow-style thick ring in the
+  // palette's AgriMet color; `fill` puts this mode's status color inside
+  // both. The network survives grayscale and every CVD type, so a stacked
+  // anchor and its spider feet read as two networks without the chips.
+  const STATION_RADIUS = ['interpolate', ['linear'], ['zoom'], 4, 3.5, 7, 5, 10, 7, 14, 9];
   function stationPaint() {
+    const fill = paintColorForMode(activeMode);
+    const hydro = MCO.map.markerPaint('hydromet', { radius: STATION_RADIUS, fill });
+    const agri  = MCO.map.markerPaint('agrimet',  { radius: STATION_RADIUS, fill });
+    const byNet = (prop) => ['match', ['get', 'sub_network'], 'AgriMet', agri[prop], hydro[prop]];
     return {
-      'circle-radius': [
-        'interpolate', ['linear'], ['zoom'],
-        4,  3.5,
-        7,  5,
-        10, 7,
-        14, 9,
-      ],
-      'circle-color': paintColorForMode(activeMode),
-      'circle-stroke-color': dotStrokeColor(),
-      'circle-stroke-width': 1.2,
+      'circle-radius': STATION_RADIUS,
+      'circle-color': fill,
+      'circle-stroke-color': byNet('circle-stroke-color'),
+      'circle-stroke-width': byNet('circle-stroke-width'),
       'circle-opacity': 0.95,
     };
   }
@@ -640,11 +646,12 @@
 
   function refreshDotColors() {
     if (!map || !map.getLayer('stations-layer')) return;
-    const color = paintColorForMode(activeMode);
-    const stroke = dotStrokeColor();
+    // Mode and theme both feed the marker paint (fill, network ring colors).
+    const paint = stationPaint();
     for (const lid of ['stations-layer', 'spider-layer']) {
-      map.setPaintProperty(lid, 'circle-color', color);
-      map.setPaintProperty(lid, 'circle-stroke-color', stroke);
+      for (const k of ['circle-color', 'circle-stroke-color', 'circle-stroke-width']) {
+        map.setPaintProperty(lid, k, paint[k]);
+      }
     }
     refreshLabelPaint();
     refreshOverlayPaints();
@@ -1727,6 +1734,24 @@
         pushState();
       },
     });
+    // Network key: the marker shapes (the chips in the navbar toggle them).
+    const key = document.createElement('div');
+    key.className = 'legend-networks';
+    for (const net of ['hydromet', 'agrimet']) {
+      const n = MCO.palette.network(net, document.documentElement.dataset.theme);
+      const item = document.createElement('span');
+      item.className = 'legend-network';
+      const sw = document.createElement('span');
+      sw.className = 'mco-legend-swatch';
+      sw.dataset.shape = n.shape;
+      // The filled circle's network color is its edge, not its fill (the
+      // fill is the data): show it with a neutral fill.
+      sw.style.setProperty('--swatch', n.shape === 'circle' ? NULL_COLOR : n.color);
+      sw.setAttribute('aria-hidden', 'true');
+      item.append(sw, document.createTextNode(n.shape === 'circle' ? `${n.label} (dot)` : `${n.label} (ring)`));
+      key.appendChild(item);
+    }
+    legendRowsEl.appendChild(key);
     const hint = document.createElement('div');
     hint.className = 'legend-hint';
     hint.textContent = 'Click to toggle · Double-click to isolate';
