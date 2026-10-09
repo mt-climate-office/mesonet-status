@@ -434,7 +434,9 @@
     @media (hover: none) {
       .chip, input[type="search"] { min-height: 40px; }
       #search-dropdown li { min-height: 40px; padding: 10px 8px; }
-      .legend-row { min-height: 36px; padding: 7px 6px; }
+      /* 40px, not 36: kit 0.9.0's 390px gate (HOUSE-STYLE §5.5). */
+      .legend-row { min-height: 40px; padding: 7px 6px; }
+      .pop-links a { min-height: 40px; }
     }
   </style>
 </head>
