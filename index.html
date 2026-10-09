@@ -14,7 +14,7 @@
     worker-src blob: https://unpkg.com;
     style-src 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
     font-src https://cdn.jsdelivr.net;
-    img-src 'self' data: blob:;
+    img-src 'self' data: blob: https://cdn.jsdelivr.net;
     connect-src 'self' https://mesonet2.climate.umt.edu https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://s3.amazonaws.com;
     base-uri 'none';
     form-action 'none'">
@@ -26,24 +26,30 @@
   <meta name="author" content="Montana Climate Office">
   <meta name="theme-color" content="#1a6faf" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#161b22" media="(prefers-color-scheme: dark)">
-  <link rel="canonical" href="https://mt-climate-office.github.io/mesonet-status/">
+  <!-- Canonical on the production host (mesonet-gateway proxies /status to
+       this Pages repo), not the Pages URL. -->
+  <link rel="canonical" href="https://mesonet.climate.umt.edu/status/">
 
-  <!-- Favicons / app icons -->
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png">
+  <!-- Favicons / app icons: hot-linked from the pinned kit tag (kit 0.9.0,
+       decided 2026-10-08) so they version with the kit and can't drift; the
+       navbar logo stays vendored (assets/mco-logo.png). img-src allows
+       cdn.jsdelivr.net for these. -->
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/assets/apple-touch-icon.png">
 
-  <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.) -->
+  <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
+       og-card.png is this app's OWN card — a live screenshot regenerated
+       nightly by .github/workflows/preview.yml — not a copy of the kit's
+       generic card, so it stays in assets/ (served from the production host). -->
   <meta property="og:type"             content="website">
   <meta property="og:site_name"        content="Montana Mesonet">
   <meta property="og:title"            content="Status · Montana Mesonet">
   <meta property="og:description"      content="Real-time station status map for the Montana Mesonet network — see which HydroMet and AgriMet stations are reporting, and how recently.">
-  <meta property="og:url"              content="https://mt-climate-office.github.io/mesonet-status/">
+  <meta property="og:url"              content="https://mesonet.climate.umt.edu/status/">
   <meta property="og:locale"           content="en_US">
-  <meta property="og:image"            content="https://mt-climate-office.github.io/mesonet-status/assets/og-card.png">
-  <meta property="og:image:secure_url" content="https://mt-climate-office.github.io/mesonet-status/assets/og-card.png">
+  <meta property="og:image"            content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
+  <meta property="og:image:secure_url" content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
   <meta property="og:image:type"       content="image/png">
   <meta property="og:image:width"      content="2400">
   <meta property="og:image:height"     content="1260">
@@ -53,7 +59,7 @@
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Status · Montana Mesonet">
   <meta name="twitter:description" content="Real-time station status map for the Montana Mesonet network — see which HydroMet and AgriMet stations are reporting, and how recently.">
-  <meta name="twitter:image"       content="https://mt-climate-office.github.io/mesonet-status/assets/og-card.png">
+  <meta name="twitter:image"       content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
   <meta name="twitter:image:alt"   content="Map of Montana showing Mesonet station reporting status as colored dots across the state.">
 
   <!-- Anti-flash theme boot (mco-web-style 0.9.0 snippets/anti-flash.html,
