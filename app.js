@@ -247,7 +247,7 @@
   const getLower = (key) => MCO.getParamLower(key, urlParams);
 
   // Single-character shortcuts can misfire for speech-input users — WCAG 2.1.4
-  // wants an off switch. Re-emitted on pushState so the preference sticks
+  // wants an off switch. Re-emitted on writeUrl so the preference sticks
   // across navigation, but deliberately a URL param (not localStorage): it's
   // the sharer's input preference, not part of the view.
   const kbdShortcuts = getLower('kbd') !== 'off';
@@ -362,7 +362,7 @@
     onChange: () => {
       // Our layers come back on style.load (wireMapEvents), every time.
       if (map) map.setStyle(MCO.map.cartoStyleUrl());
-      pushState();
+      writeUrl();
     },
   });
 
@@ -692,7 +692,7 @@
         else             flyToAndOpen(_initStation);
       } else {
         // Push initial URL so it's clean even if the user hasn't interacted yet
-        pushState();
+        writeUrl();
       }
       // First meaningful state: stations drawn, URL state applied. Releases the
       // anti-flash snippet's mco-booting hold (kit 0.9.0; it times out at 3 s
@@ -1100,7 +1100,7 @@
         MCO.lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
         rebuildSource();   // re-emit source so colocation reflects visible networks
         applyAllFilters();
-        pushState();
+        writeUrl();
       });
       subnetFiltersEl.appendChild(chip);
     }
@@ -1293,7 +1293,7 @@
       if (state === 'closed' && _sheetFor) {
         _sheetFor = null;
         _selectedStation = null;
-        pushState();
+        writeUrl();
       }
     },
   });
@@ -1312,7 +1312,7 @@
       fillSheet(stationId);
       sheet.open('peek');
       announcePopup(stationId);
-      pushState();
+      writeUrl();
       return;
     }
     if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
@@ -1325,12 +1325,12 @@
       if (_popup === p) {
         _popup = null;
         _selectedStation = null;
-        pushState();
+        writeUrl();
       }
     });
     _popup = p;
     announcePopup(stationId);
-    pushState();
+    writeUrl();
   }
 
   // ── Spider expand ────────────────────────────────────────────────────────
@@ -1416,7 +1416,7 @@
     });
 
     // Reflect every pan/zoom in the URL so the view is sharable
-    map.on('moveend', pushState);
+    map.on('moveend', writeUrl);
 
     // Keep spider feet anchored at constant pixel offset while the camera moves.
     // Coalesce multiple per-frame `move` events into a single rebuild via rAF.
@@ -1427,11 +1427,11 @@
     });
   }
 
-  // ── URL state push ───────────────────────────────────────────────────────
+  // ── URL writes ──────────────────────────────────────────────────────────
   // Lists are space-joined; URLSearchParams encodes spaces as '+', giving
   // tidy URLs like net=agrimet. Enum-string values are lowercase. Defaults are
   // elided (kit §4): both-networks-on emits no net param at all.
-  function pushState() {
+  function writeUrl() {
     const params = {};
     if (activeMode !== 'status') params.mode = activeMode;
     if (activeNetworks.size !== KNOWN_NETWORKS.length) {
@@ -1442,9 +1442,12 @@
     }
     if (labelsOn) params.labels = 'on';
     if (legendCtl && legendCtl.isCollapsed()) params.legend = 'collapsed';
+    // Clean URL (kit 0.8.0): the theme only when it differs from what a fresh
+    // visit would get (the OS preference), the camera only when it isn't the
+    // default Montana fit.
     const theme = MCO.getTheme();
-    if (theme) params.theme = theme;
-    if (map) Object.assign(params, MCO.map.cameraParams(map));
+    if (theme !== MCO.osTheme()) params.theme = theme;
+    if (map) Object.assign(params, MCO.map.cameraParamsIfDefault(map));
     else {
       // Map not created yet: keep the camera the URL arrived with.
       for (const k of ['lng', 'lat', 'zoom']) if (urlParams.has(k)) params[k] = urlParams.get(k);
@@ -1455,7 +1458,7 @@
   }
 
   // Track whether the next Popup `close` event was triggered programmatically
-  // (so we don't pushState for an open-replace; the new popup pushes its own state).
+  // (so we don't writeUrl for an open-replace; the new popup writes its own state).
   let _suppressNextPopupClose = false;
   function closePopup() {
     if (!_popup && !_sheetFor) return;
@@ -1467,7 +1470,7 @@
     if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
     if (_selectedStation) {
       _selectedStation = null;
-      pushState();
+      writeUrl();
     }
   }
 
@@ -1619,7 +1622,7 @@
     }
     refreshDotColors();
     applyAllFilters();  // category filter belongs to the active mode
-    pushState();
+    writeUrl();
   }
   for (const btn of document.querySelectorAll('.seg-btn[data-mode]')) {
     btn.setAttribute('aria-pressed', btn.dataset.mode === activeMode ? 'true' : 'false');
@@ -1646,7 +1649,7 @@
     labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
     MCO.lsSet('mco-status-labels', labelsOn ? 'on' : 'off');
     applyLabelsVisibility();
-    pushState();
+    writeUrl();
   });
 
   // ── Legend collapse/expand (kit collapsible + animated body) ────────────
@@ -1671,7 +1674,7 @@
     onChange: (collapsed) => {
       // Swapped label: the button names the ACTION it will perform (§5.7).
       legendToggleBtn.setAttribute('aria-label', collapsed ? 'Expand legend' : 'Collapse legend');
-      if (legendCtl) pushState();   // skip the init call (map camera not settled)
+      if (legendCtl) writeUrl();   // skip the init call (map camera not settled)
     },
   });
 
@@ -1731,7 +1734,7 @@
       onChange: (visible) => {
         MODES[activeMode].cats = visible;
         applyAllFilters();
-        pushState();
+        writeUrl();
       },
     });
     // Network key: the marker shapes (the chips in the navbar toggle them).

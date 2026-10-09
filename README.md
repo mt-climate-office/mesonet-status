@@ -35,9 +35,9 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 
 | Param     | Values                                    | Notes                                         |
 |-----------|-------------------------------------------|-----------------------------------------------|
-| `lng`     | float                                     | Map center longitude                          |
-| `lat`     | float                                     | Map center latitude                           |
-| `zoom`    | float                                     | Map zoom                                      |
+| `lng`     | float                                     | Map center longitude. Omitted at the default Montana fit. |
+| `lat`     | float                                     | Map center latitude. Omitted at the default Montana fit. |
+| `zoom`    | float                                     | Map zoom. Omitted at the default Montana fit. |
 | `mode`    | `status` \| `timesince` \| `health`       | Visualization mode                            |
 | `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
 | `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
@@ -45,7 +45,7 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `hcat`    | list (`operational+partial+outage`)       | Visible Health classes. Omitted = all.        |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
-| `theme`   | `light` \| `dark`                         | Theme override                                |
+| `theme`   | `light` \| `dark` \| `high-contrast`       | Theme override. Omitted when it matches the OS preference. |
 | `station` | station id (e.g. `aceabsar`)              | Open this station's popup on load; deep-link  |
 
 Precedence per setting: URL param > `localStorage` > built-in default.
