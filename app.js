@@ -335,6 +335,11 @@
     MCO.map.addNavigation(map);                                     // top-right, no compass
     MCO.map.addFitControl(map, { onBeforeFit: () => closeSpider() });
     zoomFloor = MCO.map.installZoomFloor(map);                      // snapback + resize refit
+    // A basemap style that 404s or hangs used to leave 'load' unfired and the
+    // app empty. The kit retries it, then falls back to a blank style (which
+    // does load, so the overlays and dots still draw on style.load) with a
+    // Retry notice (kit 0.8.0). styleUrl is read at retry time (theme).
+    MCO.map.watchBasemap(map, { styleUrl: MCO.map.cartoStyleUrl });
     wireMapEvents();
     wireMapClicks();
     wireMapHover();
@@ -354,12 +359,8 @@
     iconSun: document.getElementById('icon-sun'),
     iconMoon: document.getElementById('icon-moon'),
     onChange: () => {
-      if (!map) { pushState(); return; }
-      map.setStyle(MCO.map.cartoStyleUrl());
-      map.once('style.load', () => {
-        addCustomLayers();   // re-add — setStyle wipes our sources/layers
-        rebuildSource();     // repopulate the now-empty stations source
-      });
+      // Our layers come back on style.load (wireMapEvents), every time.
+      if (map) map.setStyle(MCO.map.cartoStyleUrl());
       pushState();
     },
   });
@@ -677,7 +678,7 @@
       applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
       // Deep-link from ?station=… in URL. loadAll() is only called from the
-      // map's 'load' handler, so _mapReady is always true here.
+      // map's first style.load, so _mapReady is always true here.
       if (_initStation && stationById.has(_initStation)) {
         const s = stationById.get(_initStation);
         if (_hasInitPos) openPopupFor(_initStation, [s.longitude, s.latitude]);
@@ -1355,11 +1356,18 @@
 
   // ── Map event wiring (called from initMap) ───────────────────────────────
   function wireMapEvents() {
-    map.on('load', () => {
+    // Every style.load — the first one, each theme switch, a watchBasemap
+    // retry or its blank fallback — wipes our sources and layers: re-add them
+    // and repopulate the stations source. The first one also starts the data
+    // fetch, once layers exist, so rebuildSource never lands before its
+    // source (and so a dead basemap can't strand the data: 'load' never fires
+    // for a style that failed).
+    map.on('style.load', () => {
       addCustomLayers();
-      zoomFloor.refresh();
+      rebuildSource();
+      if (_mapReady) return;
       _mapReady = true;
-      // Kick off data fetch once layers exist, so rebuildSource never lands before its source.
+      zoomFloor.refresh();
       loadAll();
     });
 
