@@ -358,14 +358,15 @@
       padding: 2px 7px; border-radius: 999px; margin-left: 6px;
     }
     /* Pill text over the data-palette colors (not tokens — data, not chrome).
-       White on the teal is ~4.2:1 at bold 0.66rem — flagged for the deferred
-       CVD/palette retune (CONSUMERS.md Tier-2); unchanged in this migration. */
-    .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
+       Measured (WCAG 1.4.3, 4.5:1 at bold 0.66rem): black on the teal 5.08:1
+       (white was 4.14:1, the axe failure on every station popup); white on
+       the red-orange 5.48:1; #1a1a2e on the grey 6.71:1. */
+    .pop-pill.fresh { background: var(--status-fresh); color: #000; }
     .pop-pill.stale { background: var(--status-stale); color: #fff; }
     .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
     /* Health pills reuse the same three data colors. Dark text on the pale
        yellow: ≈12:1. */
-    .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
+    .pop-pill.operational { background: var(--status-fresh);   color: #000; }
     .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
     .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
     .pop-missing {
