@@ -359,6 +359,10 @@
     button: document.getElementById('btn-theme'),
     iconSun: document.getElementById('icon-sun'),
     iconMoon: document.getElementById('icon-moon'),
+    // Kit 0.10.0: dark → light → high contrast, so high contrast is reachable
+    // from the page (it was ?theme= / storage only). The label names the next.
+    cycle: true,
+    iconContrast: document.getElementById('icon-contrast'),
   });
   // Any theme change (this toggle or anything else calling MCO.setTheme) —
   // kit 0.9.0's mco:themechange. Our layers come back on style.load
