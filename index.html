@@ -288,31 +288,12 @@
       left: 12px;
       min-width: 180px;
     }
-    .legend-row {
-      display: flex; align-items: center; gap: 7px;
-      padding: 3px 6px; margin: 0;
-      width: 100%; text-align: left;
-      background: none; border: 0; font: inherit; color: inherit;
-      border-radius: 4px; cursor: pointer;
-      transition: background var(--transition), opacity var(--transition);
-    }
-    /* Background tint on hover/focus; the kit's universal focus ring stays. */
-    .legend-row:hover, .legend-row:focus-visible { background: var(--accent-hover); }
-    .legend-row.off { opacity: 0.4; }
-    .legend-row.off .legend-lbl { text-decoration: line-through; }
-    .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid var(--border-glass); }
-    .legend-lbl { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; flex: 1; }
-    .legend-count {
-      font-family: var(--font-mono); font-size: 0.74rem; font-weight: 600;
-      color: var(--text-primary); font-variant-numeric: tabular-nums;
-      margin-left: 6px; min-width: 3ch; text-align: right;   /* fixed columns so rows align */
-    }
+    /* Rows are the kit's .mco-legend-row (MCO.initLegendToggles); the share
+       column is this app's. */
     .legend-pct {
       font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted);
       font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
     }
-    /* Dimmed row: the label is struck through; the figures stay readable. */
-    .legend-row.off .legend-count, .legend-row.off .legend-pct { color: var(--text-secondary); }
     .legend-hint, .legend-note {
       margin-top: 6px; padding: 0 4px;
       font-size: 0.62rem; font-style: italic;
@@ -435,8 +416,6 @@
     @media (hover: none) {
       .chip, input[type="search"] { min-height: 40px; }
       #search-dropdown li { min-height: 40px; padding: 10px 8px; }
-      /* 40px, not 36: kit 0.9.0's 390px gate (HOUSE-STYLE §5.5). */
-      .legend-row { min-height: 40px; padding: 7px 6px; }
       .pop-links a { min-height: 40px; }
     }
   </style>

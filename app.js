@@ -1716,11 +1716,16 @@
   });
 
   // ── Legend (Plotly-style toggles) ────────────────────────────────────────
-  // Single click toggles a category; double-click isolates that category
-  // (double-click an already-isolated category to show all again).
-  const LEGEND_DBLCLICK_MS = 280;
+  // Click toggles a category; double-click (or Shift+Enter) isolates it, and
+  // isolating the isolated one shows everything again — MCO.initLegendToggles
+  // (kit 0.8.0), which also announces each change. Rows are .mco-legend-row:
+  // "off" dims the swatch and strikes the label, never the row's opacity
+  // (that was a 2.7:1 label, WCAG 1.4.3). Rows are rebuilt per mode, so the
+  // toggles are re-initialized with them.
+  let legendToggles = null;
 
   function renderLegend() {
+    if (legendToggles) legendToggles.dispose();
     legendRowsEl.innerHTML = '';
     // Every row gets a live count + share (refreshLegendCounts); the counts
     // ignore the toggles, so a hidden category still reports its number.
@@ -1737,32 +1742,38 @@
           { key: 'null', color: NULL_COLOR, label: 'No record' },
         ];
     legendTitleEl.textContent = MODES[activeMode].title;
-    const set = currentCats();
-    for (const r of rows) {
+    const rowEls = rows.map((r) => {
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'legend-row';
-      row.dataset.catKey = r.key;
-      const on = set.has(r.key);
-      row.setAttribute('aria-pressed', on ? 'true' : 'false');
-      if (!on) row.classList.add('off');
+      row.className = 'mco-legend-row';
+      row.dataset.key = r.key;
       const sw = document.createElement('span');
-      sw.className = 'legend-swatch';
-      sw.style.background = r.color;
+      sw.className = 'mco-legend-swatch';
+      sw.style.setProperty('--swatch', r.color);
       sw.setAttribute('aria-hidden', 'true');
       const lb = document.createElement('span');
-      lb.className = 'legend-lbl';
+      lb.className = 'mco-legend-label';
       lb.textContent = r.label;
       // Live count + share of the visible-network stations, filled by
       // refreshLegendCounts() (also on every rebuildSource tick).
       const n = document.createElement('span');
-      n.className = 'legend-count';
+      n.className = 'mco-legend-count';
       const pct = document.createElement('span');
       pct.className = 'legend-pct';
       row.append(sw, lb, n, pct);
-      attachLegendHandlers(row, r.key);
       legendRowsEl.appendChild(row);
-    }
+      return row;
+    });
+    legendToggles = MCO.initLegendToggles({
+      rows: rowEls,
+      visible: currentCats(),
+      noun: 'categories',
+      onChange: (visible) => {
+        MODES[activeMode].cats = visible;
+        applyAllFilters();
+        pushState();
+      },
+    });
     const hint = document.createElement('div');
     hint.className = 'legend-hint';
     hint.textContent = 'Click to toggle · Double-click to isolate';
@@ -1798,71 +1809,12 @@
   function refreshLegendCounts() {
     if (!stations.length) return;   // before data: rows show labels only
     const { counts, total } = legendCounts();
-    for (const row of legendRowsEl.querySelectorAll('.legend-row')) {
-      const n = counts[row.dataset.catKey] || 0;
-      row.querySelector('.legend-count').textContent = String(n);
+    for (const row of legendRowsEl.querySelectorAll('.mco-legend-row')) {
+      const n = counts[row.dataset.key] || 0;
+      row.querySelector('.mco-legend-count').textContent = String(n);
       row.querySelector('.legend-pct').textContent = total ? `(${Math.round((n / total) * 100)}%)` : '';
     }
     renderLegendNote();
-  }
-
-  function refreshLegendVisuals() {
-    const set = currentCats();
-    for (const row of legendRowsEl.querySelectorAll('.legend-row')) {
-      const on = set.has(row.dataset.catKey);
-      row.setAttribute('aria-pressed', on ? 'true' : 'false');
-      row.classList.toggle('off', !on);
-    }
-  }
-
-  function attachLegendHandlers(row, key) {
-    let clickTimer = null;
-    row.addEventListener('click', () => {
-      // Defer single-click action so a follow-up dblclick can pre-empt it.
-      if (clickTimer) return;                  // already pending → second click; let dblclick handle it
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        toggleCategory(key);
-      }, LEGEND_DBLCLICK_MS);
-    });
-    row.addEventListener('dblclick', () => {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-      isolateCategory(key);
-    });
-    // Keyboard equivalent for double-click: Shift+Enter on a focused row isolates.
-    // (Plain Enter / Space still fires `click` natively → toggle.)
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.shiftKey) {
-        e.preventDefault();
-        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-        isolateCategory(key);
-      }
-    });
-  }
-
-  function toggleCategory(key) {
-    const set = currentCats();
-    if (set.has(key)) set.delete(key);
-    else set.add(key);
-    refreshLegendVisuals();
-    applyAllFilters();
-    pushState();
-  }
-
-  function isolateCategory(key) {
-    const set = currentCats();
-    const all = currentAllCats();
-    // Already isolated to this key → restore everything.
-    if (set.size === 1 && set.has(key)) {
-      set.clear();
-      for (const k of all) set.add(k);
-    } else {
-      set.clear();
-      set.add(key);
-    }
-    refreshLegendVisuals();
-    applyAllFilters();
-    pushState();
   }
 
   // ── Periodic ticks ───────────────────────────────────────────────────────
