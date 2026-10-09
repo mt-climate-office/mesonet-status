@@ -273,22 +273,32 @@
     }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
-    /* Header break behavior mirrors mesonet-photos: the kit's ≤750px brand
-       collapse is adopted as-is (badge only — the lockup is hidden visually, so
-       the <h1> stays in the accessibility tree), and below 1200px the primary
-       controls (search + mode + networks) drop to a dedicated second row while
-       row 1 keeps the brand left and refresh/labels/theme/info right. CSS
-       `order` swaps the visual position without disturbing tab order.
-
-       1280px rather than photos' 1060px on purpose: this bar's content needs
-       ~1180px for one row (photos' needs ~1000px; it was ~1120px here before
-       the third Health mode segment), so copying the number literally would
-       force nowrap onto content that doesn't fit. Same pattern, breakpoint
-       tuned to this app — exactly how photos picked its own. */
-    @media (max-width: 1280px) {
+    /* Header on the kit's breakpoint ladder (HOUSE-STYLE §3; decided
+       2026-10-09: a bar that can't fit one row at the 1060 rung sheds at the
+       1400 rung). One row needs ~1185px with the mode buttons and the kit's
+       220px search, so at ≤1400px the mode group becomes a <select>
+       (MCO.initSegmentedFallback, mq 1400) and the search narrows to 180px;
+       that keeps the bar one row down to 1061px. At the ≤1060 rung the
+       primary controls drop to a second row, while row 1 keeps the brand
+       left and refresh/labels/theme/info right. CSS `order` swaps the visual
+       position without disturbing tab order. */
+    @media (max-width: 1400px) {
+      /* kit-override: 180px, not 220, at the 1400 rung (see above). */
+      .mco-search-input { width: 180px; }
+    }
+    @media (max-width: 1060px) {
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
+    /* The mode <select> that replaces the segmented buttons at ≤1400px.
+       height, not min-height: WebKit ignores min-height on a native select. */
+    .mode-select {
+      height: 32px; padding: 0 0.5rem;
+      background-color: var(--input-bg); color: var(--text-primary);
+      border: 1px solid var(--ctrl-border); border-radius: var(--radius-md);
+      font: inherit; font-size: 0.8rem;
+    }
+    @media (hover: none) { .mode-select { height: 40px; } }
   </style>
 </head>
 <body>
@@ -346,11 +356,17 @@
     </div>
 
     <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
-    <div class="seg-btns" role="group" aria-label="Visualization mode">
-      <button type="button" class="nav-btn seg-btn" data-mode="status"    aria-pressed="true">Status</button>
-      <button type="button" class="nav-btn seg-btn" data-mode="timesince" aria-pressed="false">Time since</button>
-      <button type="button" class="nav-btn seg-btn" data-mode="health"    aria-pressed="false">Health</button>
+    <div class="seg-btns" id="mode-seg" role="group" aria-label="Visualization mode">
+      <button type="button" class="nav-btn seg-btn" data-mode="status"    data-value="status"    aria-pressed="true">Status</button>
+      <button type="button" class="nav-btn seg-btn" data-mode="timesince" data-value="timesince" aria-pressed="false">Time since</button>
+      <button type="button" class="nav-btn seg-btn" data-mode="health"    data-value="health"    aria-pressed="false">Health</button>
     </div>
+    <!-- The same choice as a <select> at ≤1400px (MCO.initSegmentedFallback). -->
+    <select id="mode-select" class="mode-select" aria-label="Visualization mode" hidden>
+      <option value="status">Status</option>
+      <option value="timesince">Time since</option>
+      <option value="health">Health</option>
+    </select>
 
     <!-- Networks (multi-select): any combination. Pills with a check on active. -->
     <div class="mco-chips" id="subnet-filters" role="group" aria-label="Sub-network filter"></div>

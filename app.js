@@ -1667,17 +1667,21 @@
     if (!MODES[mode] || mode === activeMode) return;
     activeMode = mode;
     MCO.lsSet('mco-status-mode', activeMode);
-    for (const b of document.querySelectorAll('.seg-btn[data-mode]')) {
-      b.setAttribute('aria-pressed', b.dataset.mode === activeMode ? 'true' : 'false');
-    }
+    modeControl.set(activeMode);
     refreshDotColors();
     applyAllFilters();  // category filter belongs to the active mode
     writeUrl();
   }
-  for (const btn of document.querySelectorAll('.seg-btn[data-mode]')) {
-    btn.setAttribute('aria-pressed', btn.dataset.mode === activeMode ? 'true' : 'false');
-    btn.addEventListener('click', () => setMode(btn.dataset.mode));
-  }
+  // Mode buttons above 1400px, a <select> at or below it (the bar's shed
+  // rung; index.html). The kit mirrors one into the other and moves focus
+  // across when a breakpoint flip hides the focused one.
+  const modeControl = MCO.initSegmentedFallback({
+    group: document.getElementById('mode-seg'),
+    select: document.getElementById('mode-select'),
+    mq: '(max-width: 1400px)',
+    onChange: (v) => setMode(v),
+  });
+  modeControl.set(activeMode);
 
   // ── Labels toggle ────────────────────────────────────────────────────────
   let labelsOn = (() => {
