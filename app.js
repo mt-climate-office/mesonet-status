@@ -882,7 +882,7 @@
     _healthRefreshTimer = setTimeout(() => {
       _healthRefreshTimer = null;
       rebuildSource();
-      if (_popup && _selectedStation) _popup.setHTML(popupHTML(_selectedStation));
+      if (_popup && _selectedStation) _popup.setDOMContent(popupNode(_selectedStation));
     }, HEALTH_REFRESH_DEBOUNCE_MS);
   }
 
@@ -1201,61 +1201,69 @@
   }
 
   // ── Popup ────────────────────────────────────────────────────────────────
-  function popupHTML(stationId) {
+  // Built with DOM APIs + textContent (HOUSE-STYLE §7): MCO.map.popupContent
+  // (kit 0.8.0) gives the title, subtitle, .mco-facts list and action links;
+  // the network badge, status pills, stamp and missing-sensor list are this
+  // app's, inserted before the facts. Never setHTML of API strings.
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function popupNode(stationId) {
     const s = stationById.get(stationId);
-    if (!s) return '';
+    if (!s) return document.createDocumentFragment();
     const ts = latestById.get(stationId) ?? null;
     const mins = minutesSince(ts);
     const status = statusBucket(mins);
-    const stampAbs = ts == null ? '—' : MCO.formatStampMT(ts);
-    const stampRel = relativeStamp(ts);
-    const pillCls = status;
     const pillLbl = status === 'fresh' ? 'fresh' : status === 'stale' ? 'stale' : 'no data';
-    const elev = (typeof s.elevation === 'number') ? `${s.elevation.toFixed(0)} m` : '—';
-    const installed = (typeof s.date_installed === 'number')
-      ? MCO.formatDateMT(s.date_installed)
-      : '—';
-    // Health pill + the sensors behind a "partial" verdict. Only shown when
-    // the station is fresh: a stale station's sensor list is moot.
+    const elev = (typeof s.elevation === 'number') ? `${s.elevation.toFixed(0)} m` : null;
+    const installed = (typeof s.date_installed === 'number') ? MCO.formatDateMT(s.date_installed) : null;
+    const frag = MCO.map.popupContent({
+      title: s.name,
+      subtitle: s.station,
+      facts: [['County', s.county], ['Elevation', elev], ['Installed', installed]],
+      actions: [
+        { label: 'Open dashboard', href: DASH_URL(stationId) },
+        { label: 'Latest data', href: LATEST_FOR_URL(stationId) },
+      ],
+    });
+    const root = frag.querySelector('.mco-popup');
+    const before = root.querySelector('.mco-facts');
+
+    // Badge + pills. Health pill only when it adds something: a "no data"
+    // station is already a total outage.
+    const tags = el('div', 'pop-tags');
+    tags.append(el('span', 'pop-badge', s.sub_network || '—'), el('span', `pop-pill ${status}`, pillLbl));
     const hKey = healthKey(stationId, mins);
     const miss = missingElements(stationId);
-    const hLbl = hKey === 'partial'
-      ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
-      : healthClass(hKey).short;
-    const healthPill = hKey === 'outage' && status === 'null' ? ''   // "no data" already says it
-      : `<span class="pop-pill ${hKey}">${hLbl}</span>`;
-    let missingBlock = '';
+    if (!(hKey === 'outage' && status === 'null')) {
+      const hLbl = hKey === 'partial'
+        ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
+        : healthClass(hKey).short;
+      tags.append(el('span', `pop-pill ${hKey}`, hLbl));
+    }
+    const stamp = el('div', 'pop-stamp');
+    stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
+    root.insertBefore(tags, before);
+    root.insertBefore(stamp, before);
+
+    // The sensors behind a "partial" verdict. Only for a fresh station: a
+    // stale station's sensor list is moot.
     if (hKey !== 'outage') {
       if (miss.length) {
-        missingBlock = `<div class="pop-missing"><strong>Sensors not reporting</strong>` +
-          `<ul>${miss.map(e => `<li>${MCO.escapeHTML(e.label)}</li>`).join('')}</ul></div>`;
+        const box = el('div', 'pop-missing');
+        const ul = el('ul');
+        for (const e of miss) ul.append(el('li', null, e.label));
+        box.append(el('strong', null, 'Sensors not reporting'), ul);
+        root.insertBefore(box, before);
       } else if (!elementsById.has(stationId)) {
-        missingBlock = `<div class="pop-missing pop-missing-note">${
-          elementsFailed.has(stationId) ? 'Sensor list unavailable' : 'Checking sensors…'}</div>`;
+        root.insertBefore(el('div', 'pop-missing pop-missing-note',
+          elementsFailed.has(stationId) ? 'Sensor list unavailable' : 'Checking sensors…'), before);
       }
     }
-    return `
-      <div class="pop-title">${MCO.escapeHTML(s.name)}</div>
-      <div class="pop-sub">${MCO.escapeHTML(s.station)}</div>
-      <div style="margin-top:6px">
-        <span class="pop-badge">${MCO.escapeHTML(s.sub_network || '—')}</span>
-        <span class="pop-pill ${pillCls}">${pillLbl}</span>${healthPill}
-      </div>
-      <div class="pop-stamp">
-        <div>${stampAbs}</div>
-        <div>${stampRel}</div>
-      </div>
-      ${missingBlock}
-      <div class="pop-meta">
-        <div><strong>County:</strong> ${MCO.escapeHTML(s.county || '—')}</div>
-        <div><strong>Elevation:</strong> ${elev}</div>
-        <div><strong>Installed:</strong> ${installed}</div>
-      </div>
-      <div class="pop-links">
-        <a href="${DASH_URL(stationId)}"      target="_blank" rel="noopener">Open dashboard →</a>
-        <a href="${LATEST_FOR_URL(stationId)}" target="_blank" rel="noopener">Latest data →</a>
-      </div>
-    `;
+    return frag;
   }
 
   function openPopupFor(stationId, lngLat) {
@@ -1265,7 +1273,7 @@
     _selectedStation = stationId;
     const p = new maplibregl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
       .setLngLat(lngLat || [s.longitude, s.latitude])
-      .setHTML(popupHTML(stationId))
+      .setDOMContent(popupNode(stationId))
       .addTo(map);
     p.on('close', () => {
       if (_suppressNextPopupClose) { _suppressNextPopupClose = false; return; }

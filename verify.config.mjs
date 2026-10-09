@@ -41,7 +41,7 @@ export default {
       name: 'station', query: `?station=${STATION}`,
       // Anchored popup (desktop) or the bottom sheet (compact, kit 0.9.0).
       ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
-        && !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'),
+        && !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'),
     },
   ],
   exemptTargets: '',
@@ -85,9 +85,9 @@ export default {
     }
     {
       const { page, close } = await open(`?station=${STATION}`, {
-        ready: () => !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'),
+        ready: () => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'),
       });
-      const title = await page.evaluate(() => document.querySelector('.pop-title')?.textContent);
+      const title = await page.evaluate(() => document.querySelector('.mco-popup-title')?.textContent);
       check(`${tag} ?station= opens the station's details (${title})`, !!title);
       const intro = await page.evaluate(() => !!document.querySelector('#info-modal[open]'));
       check(`${tag} deep link suppresses the intro modal`, !intro);
@@ -113,8 +113,8 @@ export default {
       await page.fill('#search-input', 'absar');
       await page.waitForTimeout(300);
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'), null, { timeout: 15000 }).catch(() => {});
-      const st = await page.evaluate(() => ({ title: document.querySelector('.pop-title')?.textContent, q: location.search }));
+      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet .mco-popup-title'), null, { timeout: 15000 }).catch(() => {});
+      const st = await page.evaluate(() => ({ title: document.querySelector('.mco-popup-title')?.textContent, q: location.search }));
       check(`${tag} search → Enter opens the station (${JSON.stringify(st)})`, !!st.title && /station=/.test(st.q));
       await close();
     }
