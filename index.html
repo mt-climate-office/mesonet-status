@@ -2,13 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- CSP (meta form — GitHub Pages can't set headers). The sha256 pins the
-       inline anti-flash script below; recompute it if that script changes
-       (mco-web-style README § CSP). -->
+  <!-- CSP (meta form — GitHub Pages can't set headers). The first sha256 pins
+       the inline anti-flash script below; recompute it if that script changes
+       (mco-web-style README § CSP). The second is the MapLibre import map's,
+       the same on every page that copies it byte for byte. worker-src needs
+       BOTH blob: and unpkg: MapLibre 6's worker starts from a blob: URL and
+       then imports its chunk from unpkg. -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'self' 'sha256-o+rXj9Jy2CUuPoewBVeBz2GYT71qiUGzjc3SklYSaSw=' https://unpkg.com https://cdn.jsdelivr.net;
-    worker-src blob:;
+    script-src 'self' 'sha256-o+rXj9Jy2CUuPoewBVeBz2GYT71qiUGzjc3SklYSaSw=' 'sha256-NgHBdw+Nl6S2kTHNyvv5uFwHfytmfDJR39Y9qVPt/UI=' https://unpkg.com https://cdn.jsdelivr.net;
+    worker-src blob: https://unpkg.com;
     style-src 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
     font-src https://cdn.jsdelivr.net;
     img-src 'self' data: blob:;
@@ -78,8 +81,20 @@
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
   <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.css"
-        integrity="sha384-q7EDwLXBfakVimqzBJqFCTxpgy7B18buhebV158qkVMCEVAaUnU3fQTEfWgYz+7g"
+  <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
+       (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
+       entry + shared chunk and must precede any module load. Copied byte for
+       byte from mco-web-style snippets/head.html — its CSP hash depends on it.
+       The modulepreloads start the ~1.1 MB download now. -->
+  <script type="importmap">{"integrity":{"https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs":"sha384-KQzExYlfg1SnYNpLaXHTnaCTjr5wmiZ6X3sasvPb94caZfH+3+T1Sl4eJziXUtmN","https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl-shared.mjs":"sha384-V59ofCEPEqpSk5Mswc19DtDYbZWJtne210dFzS328Il6O31eLwTV7v57+Z3NjW/7"}}</script>
+  <link rel="modulepreload" href="https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs"
+        integrity="sha384-KQzExYlfg1SnYNpLaXHTnaCTjr5wmiZ6X3sasvPb94caZfH+3+T1Sl4eJziXUtmN"
+        crossorigin="anonymous">
+  <link rel="modulepreload" href="https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl-shared.mjs"
+        integrity="sha384-V59ofCEPEqpSk5Mswc19DtDYbZWJtne210dFzS328Il6O31eLwTV7v57+Z3NjW/7"
+        crossorigin="anonymous">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.css"
+        integrity="sha384-ntw3zEt6rcVML7jDK0ULmHa5hxLB23afsPqzqfY+gLgMfAkbFCnCgPpkZvV5mmZX"
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
@@ -580,11 +595,8 @@
   </div>
 </dialog>
 
-<!-- MapLibre -->
-<script src="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.js"
-        integrity="sha384-MYTfGytf3SxNyO7ZAu/U0wHCcs3NpqE92Q3wBz5PQhat8kEA/wbwb9qY6H/JLyuR"
-        crossorigin="anonymous"></script>
-<!-- mco-web-style (window.MCO / MCO.map) -->
+<!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
+     app.js waits on MCO.map.loadMapLibre(). -->
 <script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.9.0/core/mco-core.js"
         integrity="sha384-yknmet0AW3oohpwhoHolSpFs3O+rLzc5OxHp60If3eqmF/ENZRfrILPIsCWm08Hf"
         crossorigin="anonymous"></script>
