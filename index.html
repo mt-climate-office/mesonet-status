@@ -534,7 +534,7 @@
 
 <main id="main" tabindex="-1">
   <div id="map-container">
-    <div id="map" role="application" aria-label="Mesonet station status map"></div>
+    <div id="map" role="application" aria-label="Mesonet station status map. The data is in the table that follows."></div>
     <!-- Centered message overlay; shown when no stations match the active filters. -->
     <div id="empty-state" hidden role="status" aria-live="polite"></div>
 
@@ -558,11 +558,10 @@
   </div>
 </main>
 
-<!-- Screen-reader table twin of the WebGL station layer (HOUSE-STYLE §5.2);
-     rebuilt by app.js whenever the map source is. -->
-<section class="sr-only" aria-label="Station data">
-  <table id="sr-station-table"></table>
-</section>
+<!-- Screen-reader table twin of the WebGL station layer (HOUSE-STYLE §5.2):
+     MCO.srTable builds its .sr-only table here; app.js re-renders it whenever
+     the map source is rebuilt. -->
+<section id="sr-twin" aria-label="Station data"></section>
 
 <!-- Tooltip is purely visual: anchored to cursor, no focusable trigger, so it
      would never be surfaced to a screen reader. MCO.announce (the kit's live

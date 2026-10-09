@@ -100,7 +100,6 @@
   const searchInput     = document.getElementById('search-input');
   const searchDropdown  = document.getElementById('search-dropdown');
   const infoModal       = document.getElementById('info-modal');
-  const srTableEl       = document.getElementById('sr-station-table');
 
   // Screen-reader users hear "Station X opened" when a popup is shown via
   // click, search, or deep-link — through MCO.announce, the page's one
@@ -983,37 +982,46 @@
 
   // Screen-reader table twin of the WebGL station layer (HOUSE-STYLE §5.2):
   // everything the dots encode, as text, rebuilt whenever the source is.
+  // MCO.srTable (kit 0.8.0) owns the markup: caption with the row count, row
+  // headers, the .sr-only wrapper, and a rebuild only when the content changed
+  // (the 30 s repaint tick no longer replaces 245 identical rows).
+  const srTwin = MCO.srTable({
+    container: document.getElementById('sr-twin'),
+    caption: 'Montana Mesonet stations currently shown on the map',
+    rowKey: (r) => r.station,
+    columns: [
+      { key: 'label', label: 'Station', rowHeader: true },
+      { key: 'net', label: 'Network' },
+      { key: 'status', label: 'Status' },
+      { key: 'when', label: 'Last report (Mountain Time)' },
+      { key: 'health', label: 'Health' },
+      { key: 'missing', label: 'Sensors not reporting' },
+      { key: 'county', label: 'County' },
+    ],
+  });
+  // The id is this app's hook (verify.config.mjs render evidence).
+  srTwin.element.querySelector('table').id = 'sr-station-table';
   function renderSRTable() {
-    if (!srTableEl) return;
     const visible = [...bucketMembers.values()].flat()
       .sort((a, b) => a.name.localeCompare(b.name));
-    const rows = visible.map((s) => {
+    srTwin.render(visible.map((s) => {
       const ts = latestById.get(s.station) ?? null;
       const mins = minutesSince(ts);
-      const status = statusBucket(mins) === 'null' ? 'no record'
-        : statusBucket(mins) === 'fresh' ? 'reporting' : 'stale';
-      const when = ts == null ? 'no record'
-        : `${MCO.formatStampMT(ts)} (${relativeStamp(ts)})`;
-      const health = healthClass(healthKey(s.station, mins)).short;
+      const bucket = statusBucket(mins);
       const miss = missingElements(s.station);
-      const missTxt = miss.length ? miss.map(e => e.label).join(', ')
-        : elementsById.has(s.station) ? '—'
-        : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading';
-      return `<tr><th scope="row">${MCO.escapeHTML(s.name)} (${MCO.escapeHTML(s.station)})</th>` +
-        `<td>${MCO.escapeHTML(s.sub_network || '—')}</td>` +
-        `<td>${status}</td>` +
-        `<td>${MCO.escapeHTML(when)}</td>` +
-        `<td>${MCO.escapeHTML(health)}</td>` +
-        `<td>${MCO.escapeHTML(missTxt)}</td>` +
-        `<td>${MCO.escapeHTML(s.county || '—')}</td></tr>`;
-    }).join('');
-    srTableEl.innerHTML =
-      '<caption>Montana Mesonet stations currently shown on the map</caption>' +
-      '<thead><tr><th scope="col">Station</th><th scope="col">Network</th>' +
-      '<th scope="col">Status</th><th scope="col">Last report (Mountain Time)</th>' +
-      '<th scope="col">Health</th><th scope="col">Sensors not reporting</th>' +
-      '<th scope="col">County</th></tr></thead>' +
-      `<tbody>${rows}</tbody>`;
+      return {
+        station: s.station,
+        label: `${s.name} (${s.station})`,
+        net: s.sub_network,
+        status: bucket === 'null' ? 'no record' : bucket === 'fresh' ? 'reporting' : 'stale',
+        when: ts == null ? 'no record' : `${MCO.formatStampMT(ts)} (${relativeStamp(ts)})`,
+        health: healthClass(healthKey(s.station, mins)).short,
+        missing: miss.length ? miss.map(e => e.label).join(', ')
+          : elementsById.has(s.station) ? null
+          : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading',
+        county: s.county,
+      };
+    }));
   }
 
   // ── Health bookkeeping ───────────────────────────────────────────────────
