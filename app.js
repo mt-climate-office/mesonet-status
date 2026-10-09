@@ -902,8 +902,19 @@
   }
 
   function refreshStamp() {
-    // Mountain Time like every other stamp (house convention).
-    refreshStampEl.textContent = `refreshed ${MCO.hhmmNowMT()} MT`;
+    // Mountain Time like every other stamp (house convention). The word is its
+    // own span so the 1400 rung can hide it visually (index.html): the bar
+    // shows "● 12:21 MT", while the text, AT and the preview generator still
+    // read "refreshed 12:21 MT". The wrapper's title carries it for pointer
+    // users (the umrb map's pattern).
+    const time = `${MCO.hhmmNowMT()} MT`;
+    const word = document.createElement('span');
+    word.className = 'refresh-word';
+    word.textContent = 'refreshed';
+    // The space lives outside the hidden span so a screen reader never runs
+    // "refreshed" into the time; a line's leading space collapses visually.
+    refreshStampEl.replaceChildren(word, ` ${time}`);
+    refreshStampEl.parentElement.title = `Last refreshed: ${time}`;
   }
 
   // Network priority for choosing a bucket anchor; tiebreak by station id.

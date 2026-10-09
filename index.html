@@ -277,14 +277,21 @@
        2026-10-09: a bar that can't fit one row at the 1060 rung sheds at the
        1400 rung). One row needs ~1185px with the mode buttons and the kit's
        220px search, so at ≤1400px the mode group becomes a <select>
-       (MCO.initSegmentedFallback, mq 1400) and the search narrows to 180px;
-       that keeps the bar one row down to 1061px. At the ≤1060 rung the
+       (MCO.initSegmentedFallback, mq 1400), the search narrows to 180px, and
+       the refresh stamp drops its word ("● 12:21 MT"). That keeps the bar one
+       row down to 1061px. At the ≤1060 rung the
        primary controls drop to a second row, while row 1 keeps the brand
        left and refresh/labels/theme/info right. CSS `order` swaps the visual
        position without disturbing tab order. */
     @media (max-width: 1400px) {
       /* kit-override: 180px, not 220, at the 1400 rung (see above). */
       .mco-search-input { width: 180px; }
+      /* The stamp sheds its word: "● 12:21 MT". Visually hidden, not removed,
+         so AT still reads "refreshed 12:21 MT" (app.js refreshStamp). */
+      .refresh-word {
+        position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+      }
     }
     @media (max-width: 1060px) {
       .nav-meta  { order: 1; }
