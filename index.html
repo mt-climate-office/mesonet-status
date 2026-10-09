@@ -276,26 +276,12 @@
     }
     .pop-missing-note { font-style: italic; color: var(--text-muted); }
 
-    /* ── Tooltip extras (base .mco-tooltip comes from the kit) ────────────── */
-    #tooltip .tooltip-time {
-      display: block;
-      font-family: var(--font-mono);
-      font-size: 0.66rem;
-      color: var(--text-secondary);
-      margin-top: 4px;
-    }
-    #tooltip .tooltip-rel {
-      display: block;
-      font-size: 0.7rem;
-      color: var(--accent-line);
-      font-weight: 500;
-      margin-top: 1px;
-    }
-    #tooltip .tooltip-health {
-      display: block;
-      font-size: 0.68rem;
-      color: var(--text-secondary);
-      margin-top: 3px;
+    /* ── Tooltip (kit .mco-tooltip + MCO.map.initCursorTooltip) ──────────── */
+    /* kit-override: the kit styles every value line as the accent value. Here
+       only the first (relative time) is; the stamp and health lines under it
+       are secondary, as they were before the kit tooltip. */
+    .mco-tooltip .tooltip-val + .tooltip-val {
+      font-size: 0.66rem; font-weight: 400; color: var(--text-secondary); margin-top: 1px;
     }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */

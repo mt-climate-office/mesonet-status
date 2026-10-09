@@ -1476,33 +1476,23 @@
   }
 
   // ── Hover tooltip + hover-open spider for co-located sites ────────────────
-  const tooltipEl = document.getElementById('tooltip');
-  function showTooltip(stationId, e) {
+  // The tooltip is MCO.map.initCursorTooltip (kit 0.8.0): the query, cursor,
+  // edge-flipped positioning, textContent fill and mouseout cleanup. The first
+  // value line (relative time) is the accent value; the stamp and health
+  // lines below it are styled down in index.html.
+  function tooltipFor(f) {
+    const stationId = f.properties.station;
     const s = stationById.get(stationId);
-    if (!s) return;
+    if (!s) return null;
     const ts = latestById.get(stationId) ?? null;
-    const timeRow = ts == null
-      ? `<span class="tooltip-time">no record</span>`
-      : `<span class="tooltip-time">${MCO.escapeHTML(MCO.formatStampMT(ts))}</span>` +
-        `<span class="tooltip-rel">${MCO.escapeHTML(relativeStamp(ts))}</span>`;
     const miss = healthKey(stationId, minutesSince(ts)) === 'partial' ? missingElements(stationId).length : 0;
-    const healthRow = miss
-      ? `<span class="tooltip-health">${miss} sensor${miss === 1 ? '' : 's'} not reporting</span>`
-      : '';
-    tooltipEl.innerHTML =
-      `<span class="tooltip-name">${MCO.escapeHTML(s.name)}</span>` +
-      `<span class="tooltip-sub">${MCO.escapeHTML(s.station)}</span>` +
-      timeRow + healthRow;
-    tooltipEl.classList.add('visible');
-    tooltipEl.style.left = `${e.originalEvent.clientX + 14}px`;
-    tooltipEl.style.top  = `${e.originalEvent.clientY + 14}px`;
+    const lines = ts == null ? ['no record'] : [relativeStamp(ts), MCO.formatStampMT(ts)];
+    if (miss) lines.push(`${miss} sensor${miss === 1 ? '' : 's'} not reporting`);
+    return { name: s.name, sub: s.station, line: lines };
   }
-  function hideTooltip() { tooltipEl.classList.remove('visible'); }
 
-  // Single global mousemove dispatcher — does its own queryRenderedFeatures
-  // against the layer set. Avoids layer-scoped listeners which can become
-  // detached when the style is swapped on theme toggle (MapLibre keeps the
-  // map-level handler stable across setStyle).
+  // Layers queried in order; the kit skips any not yet added, and the
+  // map-level handlers survive setStyle (theme switch).
   const HOVER_LAYERS = [
     'stations-layer', 'stations-badge', 'stations-id-label',
     'spider-layer', 'spider-id-label',
@@ -1511,14 +1501,19 @@
   let _hoveredStation = null;
 
   function wireMapHover() {
+    MCO.map.initCursorTooltip(map, {
+      layers: HOVER_LAYERS,
+      element: document.getElementById('tooltip'),
+      render: tooltipFor,
+    });
+    // Spider: hovering a stacked anchor fans its members out; leaving every
+    // station layer closes it after a grace period (so the cursor can travel
+    // from the anchor to a foot).
     map.on('mousemove', (e) => {
       const layers = HOVER_LAYERS.filter(lid => map.getLayer(lid));
-      const feats = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
-      const f = feats[0] || null;
+      const f = layers.length ? map.queryRenderedFeatures(e.point, { layers })[0] : null;
       if (f) {
-        map.getCanvas().style.cursor = 'pointer';
         cancelSpiderClose();
-        showTooltip(f.properties.station, e);
         _hoveredStation = f.properties.station;
         if (ANCHOR_LAYER_IDS.has(f.layer.id)
             && f.properties.colocationCount > 1
@@ -1526,16 +1521,11 @@
           openSpider(f.properties.bucket, f.geometry.coordinates.slice());
         }
       } else if (_hoveredStation !== null) {
-        map.getCanvas().style.cursor = '';
-        hideTooltip();
         scheduleSpiderClose();
         _hoveredStation = null;
       }
     });
-    // Cursor + tooltip cleanup when the pointer leaves the map entirely.
     map.getCanvas().addEventListener('mouseleave', () => {
-      map.getCanvas().style.cursor = '';
-      hideTooltip();
       scheduleSpiderClose();
       _hoveredStation = null;
     });
