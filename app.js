@@ -1179,7 +1179,7 @@
   });
 
   function selectStation(stationId) {
-    flyToAndOpen(stationId);
+    flyToAndOpen(stationId, { push: true });
     // Collapsed: close the overlay, which returns focus to the toggle. Blurring
     // instead would drop focus to <body>, since the field is display:none once
     // the overlay closes.
@@ -1187,7 +1187,8 @@
     else searchInput.blur();
   }
 
-  function flyToAndOpen(stationId) {
+  // opts.push: a new history entry when this opens a detail (writeUrl).
+  function flyToAndOpen(stationId, opts) {
     const s = stationById.get(stationId);
     if (!s) { MCO.showToast('Station not found'); return; }
     if (s.sub_network && !activeNetworks.has(s.sub_network)) {
@@ -1206,7 +1207,7 @@
       // Live reduced-motion gate (kit §5.3) — honors mid-session OS changes.
       zoom: SEARCH_FLY_ZOOM, speed: SEARCH_FLY_SPEED, animate: !MCO.reducedMotion(),
     });
-    map.once('moveend', () => openPopupFor(stationId));
+    map.once('moveend', () => openPopupFor(stationId, null, opts));
   }
 
   // ── Popup ────────────────────────────────────────────────────────────────
@@ -1293,7 +1294,7 @@
       if (state === 'closed' && _sheetFor) {
         _sheetFor = null;
         _selectedStation = null;
-        writeUrl();
+        afterDetailClosed();
       }
     },
   });
@@ -1302,9 +1303,13 @@
     sheetBody.replaceChildren(popupNode(stationId, true));
   }
 
-  function openPopupFor(stationId, lngLat) {
+  // opts.push: open as drill-down — a new history entry when no station was
+  // open (HOUSE-STYLE §4), so Back closes it. Switching stations, deep links
+  // and history navigation replace.
+  function openPopupFor(stationId, lngLat, opts) {
     const s = stationById.get(stationId);
     if (!s) return;
+    const push = !!(opts && opts.push) && !_selectedStation;
     if (_popup) { _suppressNextPopupClose = true; _popup.remove(); _popup = null; }
     _selectedStation = stationId;
     if (MCO.viewport.isCompact()) {
@@ -1312,7 +1317,7 @@
       fillSheet(stationId);
       sheet.open('peek');
       announcePopup(stationId);
-      writeUrl();
+      writeUrl({ push });
       return;
     }
     if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
@@ -1325,12 +1330,12 @@
       if (_popup === p) {
         _popup = null;
         _selectedStation = null;
-        writeUrl();
+        afterDetailClosed();
       }
     });
     _popup = p;
     announcePopup(stationId);
-    writeUrl();
+    writeUrl({ push });
   }
 
   // ── Spider expand ────────────────────────────────────────────────────────
@@ -1431,7 +1436,10 @@
   // Lists are space-joined; URLSearchParams encodes spaces as '+', giving
   // tidy URLs like net=agrimet. Enum-string values are lowercase. Defaults are
   // elided (kit §4): both-networks-on emits no net param at all.
-  function writeUrl() {
+  // replaceUrlState for view adjustments; pushUrlState (kit 0.8.0) only for
+  // the first step into a station detail, marked so a close can step back
+  // over it instead of leaving a dead entry.
+  function writeUrl(opts) {
     const params = {};
     if (activeMode !== 'status') params.mode = activeMode;
     if (activeNetworks.size !== KNOWN_NETWORKS.length) {
@@ -1454,13 +1462,15 @@
     }
     if (_selectedStation) params.station = _selectedStation;
     if (!kbdShortcuts) params.kbd = 'off';   // preserve the a11y opt-out across navigation
-    MCO.replaceUrlState(params);
+    if (opts && opts.push) MCO.pushUrlState(params, { state: { mcoDetail: _selectedStation } });
+    else MCO.replaceUrlState(params);
   }
 
   // Track whether the next Popup `close` event was triggered programmatically
   // (so we don't writeUrl for an open-replace; the new popup writes its own state).
   let _suppressNextPopupClose = false;
-  function closePopup() {
+  // opts.fromHistory: Back/Forward already moved the URL; just re-sync it.
+  function closePopup(opts) {
     if (!_popup && !_sheetFor) return;
     if (_popup) {
       _suppressNextPopupClose = true;
@@ -1470,9 +1480,26 @@
     if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
     if (_selectedStation) {
       _selectedStation = null;
-      writeUrl();
+      afterDetailClosed(opts);
     }
   }
+  // A detail the user just closed: if its entry was pushed, step back over
+  // it (the popstate below re-syncs the URL); otherwise rewrite this one.
+  function afterDetailClosed(opts) {
+    if (!(opts && opts.fromHistory) && history.state && history.state.mcoDetail) history.back();
+    else writeUrl();
+  }
+  // Back / Forward across a drill-down entry: open or close the detail to
+  // match, then re-sync the rest of the URL to the live view (the camera may
+  // have moved since that entry was written). Hash-only changes (the skip
+  // link's #main) are left alone.
+  MCO.onUrlState((params, hash) => {
+    if (!stations.length) return;
+    const st = MCO.getParamLower('station', params);
+    if (st === _selectedStation) { if (!hash) writeUrl(); return; }
+    if (!st) closePopup({ fromHistory: true });
+    else if (stationById.has(st)) flyToAndOpen(st);
+  });
 
   // ── Spider close grace period (so cursor can travel from anchor to a foot) ─
   let _spiderCloseTimer = null;
@@ -1506,7 +1533,7 @@
       const lngLat = f.geometry.coordinates.slice();
       if (f.layer.id === 'spider-layer') {
         // Second click — open the popup for the chosen station
-        openPopupFor(props.station, lngLat);
+        openPopupFor(props.station, lngLat, { push: true });
         return;
       }
       // Click on the anchor (or its badge) of a stacked site → ensure the spider
@@ -1516,12 +1543,12 @@
       if (props.colocationCount > 1) {
         cancelSpiderClose();
         if (_spiderBucket !== props.bucket) openSpider(props.bucket, lngLat);
-        openPopupFor(props.station, lngLat);
+        openPopupFor(props.station, lngLat, { push: true });
         return;
       }
       // Plain (non-co-located) station — close any open spider, open popup directly
       if (_spiderBucket) closeSpider();
-      openPopupFor(props.station, lngLat);
+      openPopupFor(props.station, lngLat, { push: true });
     });
   }
 
