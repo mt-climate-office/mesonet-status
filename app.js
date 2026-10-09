@@ -102,10 +102,9 @@
   const infoModal       = document.getElementById('info-modal');
   const srTableEl       = document.getElementById('sr-station-table');
 
-  // Push a sentence to the aria-live region so screen-reader users hear
-  // "Station X opened" when a popup is shown via click, search, or deep-link.
-  const srAnnounceEl = document.getElementById('sr-announce');
-  function announce(text) { if (srAnnounceEl) srAnnounceEl.textContent = text; }
+  // Screen-reader users hear "Station X opened" when a popup is shown via
+  // click, search, or deep-link — through MCO.announce, the page's one
+  // announcer (kit 0.8.0: clears then sets, so a repeat is re-read).
   function announcePopup(stationId) {
     const s = stationById.get(stationId);
     if (!s) return;
@@ -113,7 +112,7 @@
     const when = ts == null ? 'no record' : `last reported ${relativeStamp(ts)}`;
     const miss = missingElements(stationId);
     const health = miss.length ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} not reporting` : '';
-    announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
+    MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
   }
 
   // Hollow/filled dot stroke — the token exists so the value can't drift from
@@ -850,7 +849,7 @@
         MCO.showToast(`Sensor lists unavailable for ${failed} station${failed === 1 ? '' : 's'}`, 6000);
       }
       const partial = countHealth().partial;
-      announce(`Sensor check complete: ${partial} station${partial === 1 ? '' : 's'} with sensors not reporting.`);
+      MCO.announce(`Sensor check complete: ${partial} station${partial === 1 ? '' : 's'} with sensors not reporting.`);
     }
   }
 
@@ -1036,7 +1035,7 @@
 
   // Legend footer note, Health mode only: progress while element lists stream
   // in, then how many fresh stations lack a list (they count as operational).
-  // Not aria-live — it'd chatter; the one-time completion goes to #sr-announce.
+  // Not aria-live — it'd chatter; the one-time completion goes to MCO.announce.
   function renderLegendNote() {
     const el = document.getElementById('legend-note');
     if (!el) return;
