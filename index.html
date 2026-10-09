@@ -171,8 +171,8 @@
     /* ── Search (kit .mco-search + MCO.initSearchBox) ─────────────────────── */
     /* kit-override: room on the right for the "/" hint below. */
     .mco-search-input { padding-right: 30px; }
-    /* The kit doesn't theme the native clear (×) glyph; invert it on the dark
-       themes like the kit's MapLibre control icons. */
+    /* kit-override: the kit doesn't theme the native clear (×) glyph; invert
+       it on the dark themes like the kit's MapLibre control icons. */
     .mco-search-input::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     .search-kbd {
       position: absolute;
@@ -289,11 +289,11 @@
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
-    /* kit-override: in rail mode (kit 0.10.0, KEEP IN SYNC with
-       MCO.viewport.RAIL_MQ) the compact bottom sheet still starts at left: 0,
-       under the fixed rail, which clips the station name. Start it beside the
-       rail. Kit issue: .mco-sheet doesn't know --rail-w. */
+    /* Rail mode (kit 0.10.0; KEEP IN SYNC with MCO.viewport.RAIL_MQ). */
     @media (max-height: 560px) and (orientation: landscape) {
+      /* kit-override: the compact bottom sheet still starts at left: 0, under
+         the fixed rail, which clips the station name. Start it beside the
+         rail. Kit issue: .mco-sheet doesn't know --rail-w. */
       .is-compact .mco-sheet { left: calc(var(--rail-w, 56px) + env(safe-area-inset-left)); }
     }
   </style>
@@ -446,7 +446,7 @@
   <section class="mco-sheet" id="station-sheet" aria-labelledby="station-sheet-title" data-state="closed" hidden>
     <div class="mco-sheet-head">
       <button type="button" class="mco-sheet-grip" aria-label="Expand details" aria-expanded="false"></button>
-      <h2 class="mco-sheet-title" id="station-sheet-title" tabindex="-1"></h2>
+      <h2 class="mco-sheet-title" id="station-sheet-title" tabindex="-1">Station details</h2>
       <button type="button" class="modal-close" data-close-sheet aria-label="Close">×</button>
     </div>
     <div class="mco-sheet-body"></div>
