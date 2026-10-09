@@ -688,9 +688,14 @@
         // Push initial URL so it's clean even if the user hasn't interacted yet
         pushState();
       }
+      // First meaningful state: stations drawn, URL state applied. Releases the
+      // anti-flash snippet's mco-booting hold (kit 0.9.0; it times out at 3 s
+      // regardless).
+      MCO.ready();
     } catch (err) {
       console.error(err);
       MCO.showToast(`Error loading data: ${err.message}`);
+      MCO.ready();
     }
   }
 

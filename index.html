@@ -10,7 +10,7 @@
        then imports its chunk from unpkg. -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'self' 'sha256-o+rXj9Jy2CUuPoewBVeBz2GYT71qiUGzjc3SklYSaSw=' 'sha256-NgHBdw+Nl6S2kTHNyvv5uFwHfytmfDJR39Y9qVPt/UI=' https://unpkg.com https://cdn.jsdelivr.net;
+    script-src 'self' 'sha256-OLe5UNKipCWDsiB3oW7e+OsD0zw6rjzozTKfQk0LVVk=' 'sha256-NgHBdw+Nl6S2kTHNyvv5uFwHfytmfDJR39Y9qVPt/UI=' https://unpkg.com https://cdn.jsdelivr.net;
     worker-src blob: https://unpkg.com;
     style-src 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
     font-src https://cdn.jsdelivr.net;
@@ -56,25 +56,31 @@
   <meta name="twitter:image"       content="https://mt-climate-office.github.io/mesonet-status/assets/og-card.png">
   <meta name="twitter:image:alt"   content="Map of Montana showing Mesonet station reporting status as colored dots across the state.">
 
-  <!-- Anti-flash theme boot (mco-web-style snippets/anti-flash.html) — inline
-       by design; validates saved values because mco-theme is shared org-wide. -->
-  <script>
-    (function () {
-      const raw = new URLSearchParams(location.search).get('theme');
-      const url = raw == null ? null : raw.toLowerCase();
-      let saved = null;
-      try { saved = localStorage.getItem('mco-theme'); } catch (e) {}
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const valid = ['dark', 'light', 'high-contrast'];
-      const t = valid.includes(url) ? url
-              : valid.includes(saved) ? saved
-              : (prefersDark ? 'dark' : 'light');
-      const root = document.documentElement;
-      root.setAttribute('data-theme', t);
-      root.classList.toggle('is-compact', window.matchMedia('(max-width: 640px), (max-height: 560px)').matches);
-      root.classList.toggle('is-touch', window.matchMedia('(hover: none)').matches);
-    })();
-  </script>
+  <!-- Anti-flash theme boot (mco-web-style 0.9.0 snippets/anti-flash.html,
+       copied byte for byte) — inline by design; validates saved values because
+       mco-theme is shared org-wide. Adds the mco-booting first-paint hold that
+       app.js releases with MCO.ready(). Its sha256 is in the CSP above. -->
+<script>
+  (function () {
+    const raw = new URLSearchParams(location.search).get('theme');
+    const url = raw == null ? null : raw.toLowerCase();
+    let saved = null;
+    try { saved = localStorage.getItem('mco-theme'); } catch (e) {}
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const valid = ['dark', 'light', 'high-contrast'];
+    const t = valid.includes(url) ? url
+            : valid.includes(saved) ? saved
+            : (prefersDark ? 'dark' : 'light');
+    const root = document.documentElement;
+    root.setAttribute('data-theme', t);
+    root.classList.toggle('is-compact', window.matchMedia('(max-width: 640px), (max-height: 560px)').matches);
+    root.classList.toggle('is-touch', window.matchMedia('(hover: none)').matches);
+    // First-paint hold (0.9.0): [data-hold] stays invisible until MCO.ready();
+    // this timeout releases it anyway, so a failed script never strands a page.
+    root.classList.add('mco-booting');
+    setTimeout(function () { root.classList.remove('mco-booting'); }, 3000);
+  })();
+</script>
 
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
