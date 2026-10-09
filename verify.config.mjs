@@ -110,6 +110,20 @@ export default {
       await close();
     }
     {
+      // Landscape phone (kit 0.10.0 rail): the bar is a 56px rail; the menu
+      // opens the drawer with focus inside and the page inert; Esc returns.
+      const { page, close } = await open('', { viewport: { width: 750, height: 342, touch: true } });
+      const w = await page.evaluate(() => Math.round(document.getElementById('navbar').getBoundingClientRect().width));
+      await page.click('#btn-rail-menu');
+      await page.waitForTimeout(300);
+      const o = await page.evaluate(() => ({ inside: document.getElementById('nav-drawer').contains(document.activeElement), inert: document.getElementById('main').inert }));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      const c = await page.evaluate(() => ({ focus: document.activeElement?.id, inert: document.getElementById('main').inert }));
+      check(`${tag} 750×342 rail: ${w}px bar, drawer focus+inert, Esc back to the menu`, w === 56 && o.inside && o.inert && c.focus === 'btn-rail-menu' && !c.inert, JSON.stringify({ w, o, c }));
+      await close();
+    }
+    {
       // Search: type, pick with Enter, popup opens.
       const { page, close } = await open('');
       // Typing makes the best match active (MCO.initSearchBox); Enter picks it.
