@@ -289,13 +289,6 @@
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
-    /* Rail mode (kit 0.10.0; KEEP IN SYNC with MCO.viewport.RAIL_MQ). */
-    @media (max-height: 560px) and (orientation: landscape) {
-      /* kit-override: the compact bottom sheet still starts at left: 0, under
-         the fixed rail, which clips the station name. Start it beside the
-         rail. Kit issue: .mco-sheet doesn't know --rail-w. */
-      .is-compact .mco-sheet { left: calc(var(--rail-w, 56px) + env(safe-area-inset-left)); }
-    }
   </style>
 </head>
 <body>
