@@ -109,9 +109,9 @@ export default {
     {
       // Search: type, pick with Enter, popup opens.
       const { page, close } = await open('');
+      // Typing makes the best match active (MCO.initSearchBox); Enter picks it.
       await page.fill('#search-input', 'absar');
       await page.waitForTimeout(300);
-      await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'), null, { timeout: 15000 }).catch(() => {});
       const st = await page.evaluate(() => ({ title: document.querySelector('.pop-title')?.textContent, q: location.search }));

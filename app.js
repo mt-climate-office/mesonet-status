@@ -672,7 +672,7 @@
       // network fill for missing/expired stations streams in afterwards.
       loadElements();
       buildFilterUI();
-      populateSearch();
+      searchBox.refresh();
       rebuildSource();
       applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
@@ -1140,119 +1140,43 @@
     }
   }
 
-  // ── Search (custom listbox dropdown + flyTo + popup) ─────────────────────
-  // Custom rather than native <datalist> so the popup honors the app theme.
-  let _searchSorted = [];
-  let _activeSearchIndex = -1;
+  // ── Search (kit combobox + flyTo + popup) ────────────────────────────────
+  // MCO.initSearchBox (kit 0.8.0): the APG combobox — roles and aria-*, the
+  // ranking (accent/typo-tolerant, id or name), Up/Down/Home/End/Enter/Esc,
+  // and a polite result count. The app supplies the items and what a pick does.
   const SEARCH_MAX_RESULTS = 8;
+  const searchBox = MCO.initSearchBox({
+    input: searchInput,
+    listbox: searchDropdown,
+    label: 'Stations',
+    limit: SEARCH_MAX_RESULTS,
+    items: () => stations
+      .filter((s) => stationById.has(s.station))
+      .map((s) => ({ id: s.station, label: s.name, meta: `${s.station} · ${s.sub_network || '—'}` })),
+    value: () => _selectedStation,
+    onSelect: (id) => selectStation(id),
+  });
 
-  function populateSearch() {
-    _searchSorted = [...stations].sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  function matchScore(s, q) {
-    const n = s.name.toLowerCase();
-    const id = s.station.toLowerCase();
-    if (n === q || id === q)   return 0;
-    if (n.startsWith(q))       return 1;
-    if (id.startsWith(q))      return 2;
-    if (n.includes(q))         return 3;
-    if (id.includes(q))        return 4;
-    return Infinity;
-  }
-
-  function showSearchDropdown(rawQuery) {
-    const q = rawQuery.trim().toLowerCase();
-    if (!q) { hideSearchDropdown(); return; }
-    const matches = _searchSorted
-      .map(s => ({ s, score: matchScore(s, q) }))
-      .filter(m => m.score < Infinity)
-      .sort((a, b) => a.score - b.score || a.s.name.localeCompare(b.s.name))
-      .slice(0, SEARCH_MAX_RESULTS)
-      .map(m => m.s);
-    searchDropdown.innerHTML = '';
-    if (matches.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'empty';
-      li.setAttribute('aria-disabled', 'true');
-      li.textContent = `No stations match "${rawQuery.trim()}"`;
-      searchDropdown.appendChild(li);
-      searchDropdown.hidden = false;
-      searchInput.setAttribute('aria-expanded', 'true');
-      _activeSearchIndex = -1;
-      return;
-    }
-    for (const s of matches) {
-      const li = document.createElement('li');
-      li.setAttribute('role', 'option');
-      li.dataset.stationId = s.station;
-      li.id = `search-opt-${s.station}`;
-      const name = document.createElement('span');
-      name.className = 'search-name';
-      name.textContent = s.name;
-      const meta = document.createElement('span');
-      meta.className = 'search-meta';
-      meta.textContent = `${s.station} · ${s.sub_network || '—'}`;
-      li.appendChild(name);
-      li.appendChild(meta);
-      // mousedown (not click) so the option commits before the input's blur.
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        selectStation(s.station);
-      });
-      searchDropdown.appendChild(li);
-    }
-    searchDropdown.hidden = false;
-    searchInput.setAttribute('aria-expanded', 'true');
-    _activeSearchIndex = -1;
-    searchInput.removeAttribute('aria-activedescendant');
-  }
-
-  function hideSearchDropdown() {
-    searchDropdown.hidden = true;
-    searchInput.setAttribute('aria-expanded', 'false');
-    _activeSearchIndex = -1;
-    searchInput.removeAttribute('aria-activedescendant');
-  }
-
-  // Below 460px the search field collapses into #btn-search-toggle and reopens
+  // Below 640px the search field collapses into #btn-search-toggle and reopens
   // as an overlay bar — kit component (MCO.initSearchCollapse). The kit owns
   // open/close, focus in and out, outside-dismiss and viewport-widening resets;
-  // this app keeps Esc precedence against its own suggestions dropdown, the `/`
-  // shortcut, and where focus goes after a station is picked.
+  // this app keeps the `/` shortcut, the last Esc step, and where focus goes
+  // after a station is picked.
   const searchCollapse = MCO.initSearchCollapse({
     wrap: document.getElementById('search-wrap'),
     toggle: document.getElementById('btn-search-toggle'),
     input: searchInput,
-    onClose: hideSearchDropdown,
+    onClose: () => searchBox.close(),
   });
 
   function selectStation(stationId) {
-    hideSearchDropdown();
     flyToAndOpen(stationId);
-    searchInput.value = '';
     // Collapsed: close the overlay, which returns focus to the toggle. Blurring
     // instead would drop focus to <body>, since the field is display:none once
     // the overlay closes.
     if (searchCollapse.isCollapsed()) searchCollapse.close();
     else searchInput.blur();
   }
-
-  function setActiveSearchItem(idx) {
-    const items = searchDropdown.querySelectorAll('li');
-    if (!items.length) return;
-    if (idx < 0)               idx = items.length - 1;
-    if (idx >= items.length)   idx = 0;
-    _activeSearchIndex = idx;
-    items.forEach((it, i) => it.classList.toggle('active', i === idx));
-    items[idx].scrollIntoView({ block: 'nearest' });
-    searchInput.setAttribute('aria-activedescendant', items[idx].id);
-  }
-
-  searchInput.addEventListener('input',  () => showSearchDropdown(searchInput.value));
-  searchInput.addEventListener('focus',  () => { if (searchInput.value) showSearchDropdown(searchInput.value); });
-  // Delay so a click/mousedown on an option can fire before we hide the list.
-  searchInput.addEventListener('blur',   () => setTimeout(hideSearchDropdown, 120));
 
   function flyToAndOpen(stationId) {
     const s = stationById.get(stationId);
@@ -1622,30 +1546,13 @@
       searchInput.select();
     }
   });
-  // Keyboard nav inside the custom dropdown.
+  // Esc in the field: the kit closes the list, then clears the text (and
+  // stops the key there). Once it lets Esc through, close the overlay, then
+  // leave the field.
   searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      // Unwind one step at a time: suggestions first, then the overlay.
-      if (!searchDropdown.hidden) { searchInput.value = ''; hideSearchDropdown(); return; }
-      if (searchCollapse.isOpen()) { searchCollapse.close(); return; }
-      searchInput.value = '';
-      searchInput.blur();
-      return;
-    }
-    if (searchDropdown.hidden) return;
-    const items = searchDropdown.querySelectorAll('li');
-    if (!items.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveSearchItem(_activeSearchIndex + 1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveSearchItem(_activeSearchIndex - 1);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const idx = _activeSearchIndex >= 0 ? _activeSearchIndex : 0;
-      selectStation(items[idx].dataset.stationId);
-    }
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (searchCollapse.isOpen()) { searchCollapse.close(); return; }
+    searchInput.blur();
   });
 
   // ── Mode toggle ──────────────────────────────────────────────────────────

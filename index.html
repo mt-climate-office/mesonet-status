@@ -168,83 +168,12 @@
     }
     .empty-state-card strong { color: var(--text-primary); font-weight: 600; }
 
-    /* ── Search input (primary action; lives in navbar) ──────────────────── */
-    .search-wrap { position: relative; display: inline-flex; align-items: center; }
-    input[type="search"] {
-      /* Solid bg (not rgba) so it can't be visually replaced by Chrome's
-         autofill mask. */
-      background-color: var(--input-bg);
-      color: var(--text-primary);
-      border: 1px solid var(--ctrl-border); border-radius: var(--radius-md);
-      padding: 0 36px 0 30px; height: 32px;
-      width: 240px; max-width: 100%;
-      font-size: 0.82rem; font-family: inherit;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a8190' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
-      background-repeat: no-repeat;
-      background-position: 8px center;
-      background-size: 14px 14px;
-      transition: var(--transition), width 0.18s ease-out;
-    }
-    input[type="search"]:hover { border-color: var(--accent-line); }
-    /* No outline:none here — the kit's universal :focus-visible ring stays. */
-    input[type="search"]:focus { border-color: var(--accent-line); width: 280px; }
-    input[type="search"]::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
-    input[type="search"]::placeholder { color: var(--text-muted); opacity: 1; }
-
-    /* Custom search suggestions listbox — replaces native <datalist> so the
-       popup is themed (the native popup is unstylable Chrome UI). */
-    #search-dropdown {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0; right: 0;
-      min-width: 100%;
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow);
-      list-style: none;
-      margin: 0; padding: 4px;
-      max-height: 280px;
-      overflow-y: auto;
-      z-index: var(--z-flyout);
-    }
-    #search-dropdown li {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 5px 8px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      border-radius: var(--radius-sm);
-      color: var(--text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-    }
-    #search-dropdown li:hover,
-    #search-dropdown li.active {
-      background: var(--accent-hover);
-      color: var(--text-primary);
-    }
-    #search-dropdown li.empty {
-      color: var(--text-muted);
-      font-style: italic;
-      cursor: default;
-    }
-    #search-dropdown li.empty:hover { background: none; }
-    #search-dropdown .search-name {
-      flex: 1; min-width: 0;
-      overflow: hidden; text-overflow: ellipsis;
-    }
-    #search-dropdown .search-meta {
-      flex-shrink: 0;
-      font-family: var(--font-mono);
-      font-size: 0.68rem;
-      /* --text-secondary, not --text-muted: keeps AA headroom over the
-         accent-tinted hover background. */
-      color: var(--text-secondary);
-    }
-
+    /* ── Search (kit .mco-search + MCO.initSearchBox) ─────────────────────── */
+    /* kit-override: room on the right for the "/" hint below. */
+    .mco-search-input { padding-right: 30px; }
+    /* The kit doesn't theme the native clear (×) glyph; invert it on the dark
+       themes like the kit's MapLibre control icons. */
+    .mco-search-input::-webkit-search-cancel-button { filter: var(--ctrl-icon-filter, none); }
     .search-kbd {
       position: absolute;
       right: 6px; top: 50%;
@@ -259,7 +188,7 @@
       transition: opacity 0.15s;
     }
     /* Hide the / hint once the user has focused the search (or while typing). */
-    .search-wrap:focus-within .search-kbd { opacity: 0; }
+    .mco-search:focus-within .search-kbd { opacity: 0; }
 
     /* ── Sub-network chips (navbar toggles) ───────────────────────────────── */
     .chip-group { display: flex; gap: 4px; }
@@ -408,14 +337,9 @@
       .nav-meta  { order: 1; }
       .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
-    @media (max-width: 640px) {
-      input[type="search"] { width: 160px; }
-      input[type="search"]:focus { width: 200px; }
-    }
     /* WCAG 2.5.5 — touch targets for app-owned controls (kit covers its own). */
     @media (hover: none) {
-      .chip, input[type="search"] { min-height: 40px; }
-      #search-dropdown li { min-height: 40px; padding: 10px 8px; }
+      .chip { min-height: 40px; }
       .pop-links a { min-height: 40px; }
     }
   </style>
@@ -441,17 +365,16 @@
   <div class="controls">
     <!-- Primary action: search a station. Press / anywhere to jump here.
          Custom listbox dropdown (not <datalist>) so the popup is fully themed. -->
-    <div class="search-wrap mco-search-collapse" id="search-wrap">
+    <div class="mco-search mco-search-collapse" id="search-wrap">
+      <span class="mco-search-icon" aria-hidden="true"></span>
       <label for="search-input" class="sr-only">Search stations</label>
-      <input type="search" id="search-input"
-             role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
-             aria-controls="search-dropdown" aria-expanded="false"
+      <!-- MCO.initSearchBox sets role=combobox and the aria-* on the field and
+           role=listbox on the list (a WAI-ARIA combobox: native <datalist>
+           popups are unstylable browser UI). -->
+      <input type="search" id="search-input" class="mco-search-input"
              placeholder="Search stations…" autocomplete="off">
       <kbd class="search-kbd" aria-hidden="true">/</kbd>
-      <!-- Deliberate WAI-ARIA combobox: native <select>/<datalist> popups are
-           unstylable Chrome UI and can't be themed. -->
-      <!-- [html-validate-disable-next prefer-native-element] -->
-      <ul id="search-dropdown" role="listbox" hidden></ul>
+      <div class="mco-search-list" id="search-dropdown" hidden></div>
     </div>
 
     <!-- Mode (radio): exactly one of these is active. Joined segmented buttons. -->
