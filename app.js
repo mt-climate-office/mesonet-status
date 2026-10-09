@@ -359,11 +359,13 @@
     button: document.getElementById('btn-theme'),
     iconSun: document.getElementById('icon-sun'),
     iconMoon: document.getElementById('icon-moon'),
-    onChange: () => {
-      // Our layers come back on style.load (wireMapEvents), every time.
-      if (map) map.setStyle(MCO.map.cartoStyleUrl());
-      writeUrl();
-    },
+  });
+  // Any theme change (this toggle or anything else calling MCO.setTheme) —
+  // kit 0.9.0's mco:themechange. Our layers come back on style.load
+  // (wireMapEvents), every time.
+  document.addEventListener('mco:themechange', () => {
+    if (map) map.setStyle(MCO.map.cartoStyleUrl());
+    writeUrl();
   });
 
   function addCustomLayers() {
