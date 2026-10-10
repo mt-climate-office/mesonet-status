@@ -121,17 +121,14 @@
        app-owned (the kit deliberately doesn't own data palettes, §6).
        ════════════════════════════════════════════════════════════════════ */
     :root {
-      /* Crameri "roma" diverging — perceptually uniform, CVD-safe, traffic-light
-         cultural mapping (green=good → red=bad). Sampled toward the center of
-         the ramp so the endpoints land in vivid mid-tones. The 5-bin ramp lives
-         in app.js (TIME_BINS — single source); these three semantic colors are
-         tokens because .pop-pill consumes them in CSS. */
-      --status-fresh:   #2a8a86;  /* vivid teal */
-      --status-stale:   #b8421b;  /* vivid red-orange */
-      --status-partial: #f4d88e;  /* roma 3–6 h pale yellow — Health "partial";
-                                     the one ramp stop whose lightness separates
-                                     from both teal and red, so it survives
-                                     grayscale (HOUSE-STYLE §6) */
+      /* Status ramp = kit roma, option B (Kyle, 2026-10-10):
+         MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse: true}), set
+         on <html> by app.js at boot (the single source). These three are the
+         same samples (bins 0, 2 and 4) as a no-JS fallback for the popup
+         pills; verify.config.mjs checks they match. Data-encoding (§6). */
+      --status-fresh:   #1e5fac;  /* roma blue (bin 0) */
+      --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" */
+      --status-stale:   #984e14;  /* roma brown (bin 4) */
       --status-null:    #9aa3b3;
     }
 
@@ -240,15 +237,14 @@
       padding: 2px 7px; border-radius: 999px; margin-left: 6px;
     }
     /* Pill text over the data-palette colors (not tokens — data, not chrome).
-       Measured (WCAG 1.4.3, 4.5:1 at bold 0.66rem): black on the teal 5.08:1
-       (white was 4.14:1, the axe failure on every station popup); white on
-       the red-orange 5.48:1; #1a1a2e on the grey 6.71:1. */
-    .pop-pill.fresh { background: var(--status-fresh); color: #000; }
+       Measured (WCAG 1.4.3, 4.5:1 at bold 0.66rem): white on the roma blue
+       6.39:1; white on the roma brown 6.11:1; #1a1a2e on the grey 6.71:1. */
+    .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
     .pop-pill.stale { background: var(--status-stale); color: #fff; }
     .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
-    /* Health pills reuse the same three data colors. Dark text on the pale
-       yellow: ≈12:1. */
-    .pop-pill.operational { background: var(--status-fresh);   color: #000; }
+    /* Health pills reuse the same three data colors. #1a1a2e on the pale
+       roma middle: 12.83:1. */
+    .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
     .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
     .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
     .pop-missing {
@@ -492,7 +488,7 @@
     <div class="info-section">
       <h3>Modes</h3>
       <ul>
-        <li><strong>Status</strong> — green if reported in the last 2 hours, red otherwise.</li>
+        <li><strong>Status</strong> — blue if reported in the last 2 hours, brown otherwise.</li>
         <li><strong>Time since</strong> — 5 bins from &lt;2 h to &gt;24 h.</li>
         <li><strong>Health</strong> — <strong>Operational</strong>: reported in the last 2 hours with every expected sensor present. <strong>Partial</strong>: reported, but one or more sensors are silent (the popup lists them). <strong>Total outage</strong>: no report in the last 2 hours.</li>
       </ul>

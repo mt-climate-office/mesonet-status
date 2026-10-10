@@ -54,34 +54,43 @@
   // Coordinate precision for the co-location bucket key (~11 m at MT latitudes)
   const BUCKET_PRECISION        = 4;
 
-  // Time-since bins (minutes). Crameri "roma" diverging — perceptually uniform,
-  // CVD-safe, with the cultural green=good→red=bad traffic-light direction.
-  // Stops sampled toward the center of the ramp (q≈0.8/0.65/0.5/0.35/0.2,
-  // reversed so low value = cool/teal/fresh, high value = warm/red/stale) —
-  // keeps the endpoints in vivid mid-tones so teal vs. red stays distinguishable.
-  // SINGLE SOURCE for the ramp hexes (map paint + legend swatches). The three
-  // semantic colors below are read from the --status-* CSS tokens so the
-  // popup pills and the map always agree.
+  // Status ramp = kit roma, option B (Kyle, 2026-10-10). Crameri roma
+  // (MCO.palette, kit 0.12.0, diverging, midpoint 0.5) sampled at five evenly
+  // spaced points from 0.1 to 0.9, reversed so fresh = the blue end and
+  // stale = the brown end: #1e5fac #4bb2ce #c0eac3 #c1a545 #984e14. The 0.1
+  // and 0.9 ends keep the extremes vivid, and their lightness differs enough
+  // to survive grayscale (HOUSE-STYLE §6). SINGLE SOURCE: the bins, the map
+  // paint, the legend swatches, the Status/Health colors, and the --status-*
+  // tokens the popup pills read (set below, so CSS and the map can't drift).
+  const ROMA_BINS = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
   const TIME_BINS = [
-    { max: FRESH_MINUTES, color: '#2a8a86', label: '< 2 h'  },   // same cutoff as Status/Health
-    { max:  180, color: '#84c2a0', label: '2–3 h'  },
-    { max:  360, color: '#f4d88e', label: '3–6 h'  },
-    { max: 1440, color: '#d4894a', label: '6–24 h' },
-    { max: Infinity, color: '#b8421b', label: '> 24 h' },
+    { max: FRESH_MINUTES, color: ROMA_BINS[0], label: '< 2 h'  },   // same cutoff as Status/Health
+    { max:  180, color: ROMA_BINS[1], label: '2–3 h'  },
+    { max:  360, color: ROMA_BINS[2], label: '3–6 h'  },
+    { max: 1440, color: ROMA_BINS[3], label: '6–24 h' },
+    { max: Infinity, color: ROMA_BINS[4], label: '> 24 h' },
   ];
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
-  const STATUS_FRESH   = cssVar('--status-fresh',   '#2a8a86');
-  const STATUS_STALE   = cssVar('--status-stale',   '#b8421b');
-  const STATUS_PARTIAL = cssVar('--status-partial', '#f4d88e');
-  const NULL_COLOR     = cssVar('--status-null',    '#9aa3b3');
+  // Fresh / partial / stale are bins 0, 2 and 4. index.html carries the same
+  // three hexes as a no-JS fallback; verify.config.mjs checks they match.
+  const STATUS_FRESH   = ROMA_BINS[0];
+  const STATUS_PARTIAL = ROMA_BINS[2];
+  const STATUS_STALE   = ROMA_BINS[4];
+  const NULL_COLOR     = cssVar('--status-null', '#9aa3b3');
+  {
+    const root = document.documentElement.style;
+    root.setProperty('--status-fresh', STATUS_FRESH);
+    root.setProperty('--status-partial', STATUS_PARTIAL);
+    root.setProperty('--status-stale', STATUS_STALE);
+  }
 
   // Health mode classes. Operational/outage reuse the Status colors so the two
-  // modes agree on "good" and "bad"; partial takes the roma 3–6 h pale yellow
-  // (already in TIME_BINS), the one ramp member whose lightness separates from
-  // BOTH teal and red — the three classes survive grayscale (HOUSE-STYLE §6).
+  // modes agree on "good" and "bad"; partial is the ramp's pale middle (bin 2),
+  // much lighter than both ends, so the three classes survive grayscale
+  // (HOUSE-STYLE §6).
   const HEALTH_CLASSES = [
     { key: 'operational', color: STATUS_FRESH,   label: 'Operational',              short: 'operational'  },
     { key: 'partial',     color: STATUS_PARTIAL, label: 'Partial — sensor outage',  short: 'partial'      },

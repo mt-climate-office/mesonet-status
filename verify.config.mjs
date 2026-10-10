@@ -56,9 +56,20 @@ export default {
     {
       const { page, close } = await open('?theme=light');
       await page.waitForTimeout(1500);
-      // Status mode: teal (#2a8a86) = fresh, red-orange (#b8421b) = stale.
-      const [teal, red] = await colorPixels(page, ['#2a8a86', '#b8421b']);
-      check(`${tag} map paints station dots (teal ${teal}px, red ${red}px)`, teal > 150);
+      // Status mode: roma blue (#1e5fac) = fresh, roma brown (#984e14) = stale.
+      const [fresh, stale] = await colorPixels(page, ['#1e5fac', '#984e14']);
+      check(`${tag} map paints station dots (fresh ${fresh}px, stale ${stale}px)`, fresh > 150);
+      // One source for the ramp: the bins come from MCO.palette, and the no-JS
+      // --status-* literals in index.html must be the same samples.
+      const ramp = await page.evaluate(() => {
+        const want = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
+        const css = document.querySelector('style').textContent;
+        const lit = (n) => (css.match(new RegExp('--status-' + n + ':\\s*(#[0-9a-f]{6})', 'i')) || [])[1];
+        const live = (n) => getComputedStyle(document.documentElement).getPropertyValue('--status-' + n).trim();
+        return { want, lit: [lit('fresh'), lit('partial'), lit('stale')], live: [live('fresh'), live('partial'), live('stale')] };
+      });
+      const exp = [ramp.want[0], ramp.want[2], ramp.want[4]].join();
+      check(`${tag} --status-* literals and live values = roma bins 0/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
       const q = await page.evaluate(() => location.search);
       check(`${tag} defaults elided from the URL on load (${q})`, !/mode=|net=|scat=|legend=/.test(q));
       await close();
@@ -66,13 +77,13 @@ export default {
     {
       const { page, close } = await open('?theme=dark');
       await page.waitForTimeout(1500);
-      const [teal] = await colorPixels(page, ['#2a8a86']);
-      check(`${tag} dark basemap: station dots painted (teal ${teal}px)`, teal > 150);
+      const [fresh] = await colorPixels(page, ['#1e5fac']);
+      check(`${tag} dark basemap: station dots painted (fresh ${fresh}px)`, fresh > 150);
       // Theme flip restyles the map; dots must come back after style.load.
       await page.click('#btn-theme');
       await page.waitForTimeout(3500);
-      const [teal2] = await colorPixels(page, ['#2a8a86']);
-      check(`${tag} dots repainted after a theme flip (teal ${teal2}px)`, teal2 > 150);
+      const [fresh2] = await colorPixels(page, ['#1e5fac']);
+      check(`${tag} dots repainted after a theme flip (fresh ${fresh2}px)`, fresh2 > 150);
       await close();
     }
     {

@@ -12,7 +12,7 @@ Shows the current reporting state of every station across the HydroMet and AgriM
 
 In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
 
-Color is sampled from [Crameri's *roma*](https://www.fabiocrameri.ch/colourmaps/) scientific colour map — perceptually uniform, ordered, and safe for the major color-vision deficiencies, with a culturally readable green = good → red = bad direction.
+Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`, mco-web-style 0.12.0), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale.
 
 Other features:
 
