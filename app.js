@@ -345,6 +345,10 @@
     MCO.map.addNavigation(map);                                     // top-right, no compass
     MCO.map.addFitControl(map, { onBeforeFit: () => closeSpider() });
     zoomFloor = MCO.map.installZoomFloor(map);                      // snapback + resize refit
+    // The legend clears the attribution (index.html #legend): publish the
+    // bottom-right control box's height, re-measured whenever it wraps,
+    // expands or collapses to its ⓘ.
+    MCO.metrics.observe('--attrib-h', map.getContainer().querySelector('.maplibregl-ctrl-bottom-right'));
     // A basemap style that 404s or hangs used to leave 'load' unfired and the
     // app empty. The kit retries it, then falls back to a blank style (which
     // does load, so the overlays and dots still draw on style.load) with a
