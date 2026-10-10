@@ -135,6 +135,23 @@ export default {
       await close();
     }
     {
+      // Attribution is a licence requirement: at 390 (where it wraps across
+      // the whole bottom edge) every credit link must be the topmost element
+      // at its centre, and the legend must not overlap it.
+      const { page, close } = await open('?legend=open', { viewport: { width: 390, height: 844, touch: true } });
+      const r = await page.evaluate(() => {
+        const L = document.getElementById('legend').getBoundingClientRect();
+        const A = document.querySelector('.maplibregl-ctrl-attrib').getBoundingClientRect();
+        const blocked = [...document.querySelectorAll('.maplibregl-ctrl-attrib-inner a')].filter((a) => {
+          const b = a.getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+          return !(t && (a === t || a.contains(t)));
+        }).map((a) => a.textContent.trim());
+        return { gap: Math.round(A.top - L.bottom), blocked };
+      });
+      check(`${tag} 390: legend clears the attribution (gap ${r.gap}px), every credit clickable`, r.gap >= 0 && r.blocked.length === 0, JSON.stringify(r));
+      await close();
+    }
+    {
       // Search: type, pick with Enter, popup opens.
       const { page, close } = await open('');
       // Typing makes the best match active (MCO.initSearchBox); Enter picks it.

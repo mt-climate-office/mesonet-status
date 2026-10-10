@@ -192,7 +192,15 @@
 
     /* ── Legend (kit .mco-panel; app owns position + row internals) ───────── */
     #legend {
-      bottom: max(36px, calc(12px + env(safe-area-inset-bottom)));
+      /* Clear MapLibre's attribution (a licence requirement: it must stay
+         visible and clickable). On narrow maps it wraps to two lines across
+         the whole bottom edge, under the legend; app.js publishes the
+         bottom-right control box's measured height as --attrib-h, so the
+         legend sits 4px above it (and drops back when the attribution
+         collapses to its ⓘ). On a wide map the single-line attribution
+         measures ~32px, so this stays the 36px it always was. */
+      bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
+      transition: bottom var(--transition);
       left: 12px;
       min-width: 180px;
     }
