@@ -484,6 +484,13 @@
       });
     }
 
+    if (!map.getLayer('stations-fill')) {
+      map.addLayer({
+        id: 'stations-fill', type: 'circle', source: 'stations',
+        paint: stationFillPaint(),
+      });
+    }
+
     if (!map.getLayer('stations-badge')) {
       map.addLayer({
         id: 'stations-badge', type: 'symbol', source: 'stations',
@@ -519,6 +526,13 @@
       map.addLayer({
         id: 'spider-layer', type: 'circle', source: 'spider',
         paint: stationPaint(),
+      });
+    }
+
+    if (!map.getLayer('spider-fill')) {
+      map.addLayer({
+        id: 'spider-fill', type: 'circle', source: 'spider',
+        paint: stationFillPaint(),
       });
     }
 
@@ -584,20 +598,60 @@
   // palette's AgriMet color; `fill` puts this mode's status color inside
   // both. The network survives grayscale and every CVD type, so a stacked
   // anchor and its spider feet read as two networks without the chips.
+  //
+  // kit-override: markerPaint's hollow + `fill` puts the fill flush against
+  // the orange ring, and warm roma bins merge with it: the stale brown is
+  // 1.60:1 against the light ring (OKLab ΔE 12), and the 6–24 h gold is ΔE 2.8
+  // from the dark ring under deuteranopia (Machado 2009). So an AgriMet dot is
+  // two circles: the clickable *-layer draws the ring around a --dot-stroke
+  // disc GAP px wider than the dot, and the decorative *-fill layer above it
+  // paints the status fill at the HydroMet radius, leaving the same edge
+  // HydroMet dots get between fill and ring. Hit-testing is unchanged: the
+  // clickable layer still covers the whole marker.
+  //
+  // No record = no fill, in every network: HydroMet keeps only a 2px
+  // --dot-stroke edge (the same edge contrast every dot has, so ≥3:1 on both
+  // basemaps), AgriMet only its ring. A grey fill can't stay clear of a ramp
+  // that runs dark → light → dark: the old #9aa3b3 was 1.04:1 and ΔE 4.2
+  // from the 2–3 h cyan under protanopia, and no neutral from #37373f to
+  // #ebebf3 clears ΔE 15 from all five bins.
   const STATION_RADIUS = ['interpolate', ['linear'], ['zoom'], 4, 3.5, 7, 5, 10, 7, 14, 9];
+  const AGRI_GAP = 1.2;   // = HydroMet's --dot-stroke width
+  const IS_AGRI = ['==', ['get', 'sub_network'], 'AgriMet'];
+  const STATION_RADIUS_OUTER = ['interpolate', ['linear'], ['zoom'],
+    ...STATION_RADIUS.slice(3).flatMap((v, i) => i % 2 ? [['case', IS_AGRI, v + AGRI_GAP, v]] : [v])];
+  // Health mode has no "no record": a station that never reported is an outage.
+  const NO_RECORD = ['==', ['get', 'minutesSince'], null];
+  const hasNoRecordMode = (mode) => mode !== 'health';
   function stationPaint() {
     const fill = paintColorForMode(activeMode);
     const hydro = MCO.map.markerPaint('hydromet', { radius: STATION_RADIUS, fill });
     const agri  = MCO.map.markerPaint('agrimet',  { radius: STATION_RADIUS, fill });
-    const byNet = (prop) => ['match', ['get', 'sub_network'], 'AgriMet', agri[prop], hydro[prop]];
+    const edge  = hydro['circle-stroke-color'];
+    const color = ['case', IS_AGRI, edge, fill];
+    const width = ['case', IS_AGRI, agri['circle-stroke-width'], hydro['circle-stroke-width']];
     return {
-      'circle-radius': STATION_RADIUS,
-      'circle-color': fill,
-      'circle-stroke-color': byNet('circle-stroke-color'),
-      'circle-stroke-width': byNet('circle-stroke-width'),
+      'circle-radius': STATION_RADIUS_OUTER,
+      'circle-color': hasNoRecordMode(activeMode)
+        ? ['case', NO_RECORD, 'rgba(0,0,0,0)', color] : color,
+      'circle-stroke-color': ['case', IS_AGRI, agri['circle-stroke-color'], edge],
+      'circle-stroke-width': hasNoRecordMode(activeMode)
+        ? ['case', ['all', NO_RECORD, ['!', IS_AGRI]], 2, width] : width,
       'circle-opacity': 0.95,
     };
   }
+  // The AgriMet status fill drawn inside the ring (see stationPaint). Never
+  // queried for clicks or hover.
+  function stationFillPaint() {
+    return {
+      'circle-radius': STATION_RADIUS,
+      'circle-color': paintColorForMode(activeMode),
+      'circle-opacity': 0.95,
+    };
+  }
+  // Filter for a *-fill layer: AgriMet stations with a record, plus `base`.
+  const fillFilter = (base) => hasNoRecordMode(activeMode)
+    ? ['all', IS_AGRI, ['!', NO_RECORD], base] : ['all', IS_AGRI, base];
 
   function stationLabelLayout() {
     return {
@@ -671,6 +725,10 @@
       for (const k of ['circle-color', 'circle-stroke-color', 'circle-stroke-width']) {
         map.setPaintProperty(lid, k, paint[k]);
       }
+    }
+    const fillPaint = stationFillPaint();
+    for (const lid of ['stations-fill', 'spider-fill']) {
+      if (map.getLayer(lid)) map.setPaintProperty(lid, 'circle-color', fillPaint['circle-color']);
     }
     refreshLabelPaint();
     refreshOverlayPaints();
@@ -1144,11 +1202,13 @@
     const anchorOnly  = ['==', ['get', 'colocationIndex'], 0];
 
     map.setFilter('stations-layer',  ['all', anchorOnly, catMatch]);
+    map.setFilter('stations-fill',   fillFilter(['all', anchorOnly, catMatch]));
     map.setFilter('stations-badge',  ['all', anchorOnly, ['>', ['get', 'colocationCount'], 1], catMatch]);
     if (map.getLayer('stations-id-label')) {
       map.setFilter('stations-id-label', ['all', anchorOnly, catMatch]);
     }
     map.setFilter('spider-layer', catMatch);
+    map.setFilter('spider-fill', fillFilter(catMatch));
     if (map.getLayer('spider-id-label')) {
       map.setFilter('spider-id-label', catMatch);
     }
@@ -1791,6 +1851,11 @@
       const sw = document.createElement('span');
       sw.className = 'mco-legend-swatch';
       sw.style.setProperty('--swatch', r.color);
+      // No record is drawn hollow on the map (stationPaint): match it.
+      if (r.key === 'null') {
+        sw.dataset.shape = 'hollow';
+        sw.style.setProperty('--swatch', cssVar('--dot-stroke', NULL_COLOR));
+      }
       sw.setAttribute('aria-hidden', 'true');
       const lb = document.createElement('span');
       lb.className = 'mco-legend-label';
