@@ -13,6 +13,9 @@ import { load } from '../mco-web-style/tools/verify/lib.mjs';
 
 const STATION = 'aceabsar';   // a real id from /api/stations/
 const rows = () => document.querySelectorAll('#sr-station-table tbody tr').length > 100;
+// The station detail: the anchored popup (desktop) or the bottom sheet
+// (compact, kit 0.9.0 MCO.initSheet). Inlined in each page function below —
+// a function passed to the page can't close over this module.
 
 // Pixels in a screenshot of the map close to one of the status colors.
 async function colorPixels(page, hexes) {
@@ -41,7 +44,7 @@ export default {
       name: 'station', query: `?station=${STATION}`,
       // Anchored popup (desktop) or the bottom sheet (compact, kit 0.9.0).
       ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
-        && !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'),
+        && !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
     },
   ],
   exemptTargets: '',
@@ -53,9 +56,20 @@ export default {
     {
       const { page, close } = await open('?theme=light');
       await page.waitForTimeout(1500);
-      // Status mode: teal (#2a8a86) = fresh, red-orange (#b8421b) = stale.
-      const [teal, red] = await colorPixels(page, ['#2a8a86', '#b8421b']);
-      check(`${tag} map paints station dots (teal ${teal}px, red ${red}px)`, teal > 150);
+      // Status mode: roma blue (#1e5fac) = fresh, roma brown (#984e14) = stale.
+      const [fresh, stale] = await colorPixels(page, ['#1e5fac', '#984e14']);
+      check(`${tag} map paints station dots (fresh ${fresh}px, stale ${stale}px)`, fresh > 150);
+      // One source for the ramp: the bins come from MCO.palette, and the no-JS
+      // --status-* literals in index.html must be the same samples.
+      const ramp = await page.evaluate(() => {
+        const want = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
+        const css = document.querySelector('style').textContent;
+        const lit = (n) => (css.match(new RegExp('--status-' + n + ':\\s*(#[0-9a-f]{6})', 'i')) || [])[1];
+        const live = (n) => getComputedStyle(document.documentElement).getPropertyValue('--status-' + n).trim();
+        return { want, lit: [lit('fresh'), lit('partial'), lit('stale')], live: [live('fresh'), live('partial'), live('stale')] };
+      });
+      const exp = [ramp.want[0], ramp.want[2], ramp.want[4]].join();
+      check(`${tag} --status-* literals and live values = roma bins 0/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
       const q = await page.evaluate(() => location.search);
       check(`${tag} defaults elided from the URL on load (${q})`, !/mode=|net=|scat=|legend=/.test(q));
       await close();
@@ -63,13 +77,13 @@ export default {
     {
       const { page, close } = await open('?theme=dark');
       await page.waitForTimeout(1500);
-      const [teal] = await colorPixels(page, ['#2a8a86']);
-      check(`${tag} dark basemap: station dots painted (teal ${teal}px)`, teal > 150);
+      const [fresh] = await colorPixels(page, ['#1e5fac']);
+      check(`${tag} dark basemap: station dots painted (fresh ${fresh}px)`, fresh > 150);
       // Theme flip restyles the map; dots must come back after style.load.
       await page.click('#btn-theme');
       await page.waitForTimeout(3500);
-      const [teal2] = await colorPixels(page, ['#2a8a86']);
-      check(`${tag} dots repainted after a theme flip (teal ${teal2}px)`, teal2 > 150);
+      const [fresh2] = await colorPixels(page, ['#1e5fac']);
+      check(`${tag} dots repainted after a theme flip (fresh ${fresh2}px)`, fresh2 > 150);
       await close();
     }
     {
@@ -85,9 +99,9 @@ export default {
     }
     {
       const { page, close } = await open(`?station=${STATION}`, {
-        ready: () => !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'),
+        ready: () => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
       });
-      const title = await page.evaluate(() => document.querySelector('.pop-title')?.textContent);
+      const title = await page.evaluate(() => (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent);
       check(`${tag} ?station= opens the station's details (${title})`, !!title);
       const intro = await page.evaluate(() => !!document.querySelector('#info-modal[open]'));
       check(`${tag} deep link suppresses the intro modal`, !intro);
@@ -107,14 +121,28 @@ export default {
       await close();
     }
     {
+      // Landscape phone (kit 0.10.0 rail): the bar is a 56px rail; the menu
+      // opens the drawer with focus inside and the page inert; Esc returns.
+      const { page, close } = await open('', { viewport: { width: 750, height: 342, touch: true } });
+      const w = await page.evaluate(() => Math.round(document.getElementById('navbar').getBoundingClientRect().width));
+      await page.click('#btn-rail-menu');
+      await page.waitForTimeout(300);
+      const o = await page.evaluate(() => ({ inside: document.getElementById('nav-drawer').contains(document.activeElement), inert: document.getElementById('main').inert }));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      const c = await page.evaluate(() => ({ focus: document.activeElement?.id, inert: document.getElementById('main').inert }));
+      check(`${tag} 750×342 rail: ${w}px bar, drawer focus+inert, Esc back to the menu`, w === 56 && o.inside && o.inert && c.focus === 'btn-rail-menu' && !c.inert, JSON.stringify({ w, o, c }));
+      await close();
+    }
+    {
       // Search: type, pick with Enter, popup opens.
       const { page, close } = await open('');
+      // Typing makes the best match active (MCO.initSearchBox); Enter picks it.
       await page.fill('#search-input', 'absar');
       await page.waitForTimeout(300);
-      await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .pop-title, .mco-sheet .pop-title'), null, { timeout: 15000 }).catch(() => {});
-      const st = await page.evaluate(() => ({ title: document.querySelector('.pop-title')?.textContent, q: location.search }));
+      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'), null, { timeout: 15000 }).catch(() => {});
+      const st = await page.evaluate(() => ({ title: (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent, q: location.search }));
       check(`${tag} search → Enter opens the station (${JSON.stringify(st)})`, !!st.title && /station=/.test(st.q));
       await close();
     }

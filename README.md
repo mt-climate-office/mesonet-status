@@ -12,7 +12,7 @@ Shows the current reporting state of every station across the HydroMet and AgriM
 
 In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
 
-Color is sampled from [Crameri's *roma*](https://www.fabiocrameri.ch/colourmaps/) scientific colour map — perceptually uniform, ordered, and safe for the major color-vision deficiencies, with a culturally readable green = good → red = bad direction.
+Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`, mco-web-style 0.12.0), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale.
 
 Other features:
 
@@ -24,7 +24,7 @@ Other features:
 - **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
 - **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
 - **Montana state outline** so the state shape reads as the primary frame.
-- **Light/dark theme** with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
+- **Dark → light → high-contrast theme** button (high contrast uses the dark basemap) with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
 - **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
 - **First-visit help dialog** auto-opens once so newcomers get the orientation.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
@@ -35,9 +35,9 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 
 | Param     | Values                                    | Notes                                         |
 |-----------|-------------------------------------------|-----------------------------------------------|
-| `lng`     | float                                     | Map center longitude                          |
-| `lat`     | float                                     | Map center latitude                           |
-| `zoom`    | float                                     | Map zoom                                      |
+| `lng`     | float                                     | Map center longitude. Omitted at the default Montana fit. |
+| `lat`     | float                                     | Map center latitude. Omitted at the default Montana fit. |
+| `zoom`    | float                                     | Map zoom. Omitted at the default Montana fit. |
 | `mode`    | `status` \| `timesince` \| `health`       | Visualization mode                            |
 | `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
 | `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
@@ -45,7 +45,7 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `hcat`    | list (`operational+partial+outage`)       | Visible Health classes. Omitted = all.        |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
-| `theme`   | `light` \| `dark`                         | Theme override                                |
+| `theme`   | `light` \| `dark` \| `high-contrast`       | Theme override. Omitted when it matches the OS preference. |
 | `station` | station id (e.g. `aceabsar`)              | Open this station's popup on load; deep-link  |
 
 Precedence per setting: URL param > `localStorage` > built-in default.
@@ -112,7 +112,7 @@ python scripts/generate_preview.py
 ## Tooling
 
 - [MapLibre GL JS](https://maplibre.org) v6.11.2 via CDN (imported by mco-web-style's `MCO.map.loadMapLibre()`; SRI in the import map).
-- [mco-web-style](https://github.com/mt-climate-office/mco-web-style) 0.11.2 (pinned + SRI).
+- [mco-web-style](https://github.com/mt-climate-office/mco-web-style) 0.12.0 (pinned + SRI).
 - [CARTO Basemaps](https://carto.com/basemaps) Positron + Dark Matter (neutral data-vis backdrops, free, no API key).
 - Vanilla JS / HTML / CSS — no bundler, no framework.
 
