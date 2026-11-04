@@ -61,11 +61,12 @@ export default {
     // probe page 60 s to show its render evidence, not the default 30.
     const open = (q, o = {}) => open30(q, { timeout: 60000, ...o });
     // The app's category colors (its role registry, kept over the kit 0.21.0
-    // sets): the roma sample, bins 0/4 for Status, all five for Time since.
+    // sets): the roma sample, bins 0/4 for Status, all five for Time since,
+    // 0/1/2/4 for Health (operational, known, partial, outage).
     const roma = (page) => page.evaluate(() => MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true }));
     const setColors = async (page, name) => {
       const r = await roma(page);
-      return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[2], r[4]] : [r[0], r[4]];
+      return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[1], r[2], r[4]] : [r[0], r[4]];
     };
     const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed');
     {
@@ -76,16 +77,17 @@ export default {
       const [nFresh] = await colorPixels(page, [fresh]);
       check(`${tag} map paints station dots in the fresh color ${fresh} (${nFresh}px)`, nFresh > 150);
       // One source for the ramp: the --status-* literals in index.html (the
-      // pills' no-JS fallback) and the live values are roma bins 0/2/4.
+      // pills' no-JS fallback) and the live values are roma bins 0/1/2/4.
       const ramp = await page.evaluate(() => {
         const want = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
         const css = document.querySelector('style').textContent;
         const lit = (n) => (css.match(new RegExp('--status-' + n + ':\\s*(#[0-9a-f]{6})', 'i')) || [])[1];
         const live = (n) => getComputedStyle(document.documentElement).getPropertyValue('--status-' + n).trim();
-        return { want, lit: [lit('fresh'), lit('partial'), lit('stale')], live: [live('fresh'), live('partial'), live('stale')] };
+        const names = ['fresh', 'known', 'partial', 'stale'];
+        return { want, lit: names.map(lit), live: names.map(live) };
       });
-      const exp = [ramp.want[0], ramp.want[2], ramp.want[4]].join();
-      check(`${tag} --status-* literals and live values = roma bins 0/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
+      const exp = [ramp.want[0], ramp.want[1], ramp.want[2], ramp.want[4]].join();
+      check(`${tag} --status-* literals and live values = roma bins 0/1/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
       // Legend: the Status rows and roma colors, circle swatches (the marker's
       // shape), No record hollow, and no network rows (kit 0.21.0: no network
       // encoding on markers).

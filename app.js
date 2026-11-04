@@ -32,11 +32,15 @@
   const FRESH_MINUTES     = 120;
 
   // Element lists change only when a station is re-instrumented, so they're
-  // cached in localStorage per station with a 24 h TTL. 245 stations at
-  // concurrency 8 loads in ~10 s cold; the kit's default 60 s fetch timeout
-  // would let one hung request stall a worker for a minute, hence 15 s.
-  const ELEMENTS_CACHE_KEY        = 'mco-status-elements-v1';
+  // cached in localStorage per station. A list from the bulk listing carries
+  // the AirTable outage windows, which staff edit any day, so it expires
+  // after 1 h (one request, ~29 KB gzipped, ~0.2–0.3 s). A per-station list
+  // (older API: no windows) keeps the 24 h TTL: 245 stations at concurrency
+  // 8 loads in ~10 s cold. The kit's default 60 s fetch timeout would let one
+  // hung request stall a worker for a minute, hence 15 s.
+  const ELEMENTS_CACHE_KEY        = 'mco-status-elements-v2';
   const ELEMENTS_TTL_MS           = 24 * 60 * 60 * 1000;
+  const OUTAGES_TTL_MS            = 60 * 60 * 1000;
   const ELEMENTS_CONCURRENCY      = 8;
   const ELEMENTS_TIMEOUT_MS       = 15 * 1000;
   const ELEMENTS_PERSIST_EVERY    = 40;      // completions between cache writes
@@ -57,8 +61,14 @@
   // brown end: MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse:
   // true}). The 0.1 and 0.9 ends keep the extremes vivid, and their lightness
   // differs enough to survive grayscale. Health reuses bins 0, 2 and 4 so the
-  // modes agree on "good" and "bad". One value per theme (the same in all
-  // three today); verify.config.mjs checks the registry against the sample
+  // modes agree on "good" and "bad", and puts "known outage" on bin 1, next
+  // to operational: accounted for, not news. Bin 1 against the other Health
+  // colors, OKLab ΔE×100 under none/protan/deutan/tritan (Machado 2009, full
+  // severity): operational ≥ 22.0, partial ≥ 18.9, outage ≥ 25.6; grayscale
+  // ΔL ≥ 18.1 to all three (operational vs outage is 1.0). Its fill is 2.35:1
+  // on Positron, so like partial's pale fill it leans on the --dot-stroke
+  // edge for ≥ 3:1; the pill takes dark text (6.95:1). One value per theme
+  // (the same in all three today); verify.config.mjs checks the registry against the sample
   // and the --status-* literals in index.html. Data-encoding (§6).
   const ROMA_BINS = ['#1e5fac', '#4bb2ce', '#c0eac3', '#c1a545', '#984e14'];
   const ROLE_SETS = {
@@ -69,9 +79,10 @@
     'status-age': ['< 2 h', '2–3 h', '3–6 h', '6–24 h', '> 24 h']
       .map((label, i) => ({ key: String(i), label, color: ROMA_BINS[i] })),
     'status-health': [
-      { key: 'operational', label: 'Operational',             color: ROMA_BINS[0] },
-      { key: 'partial',     label: 'Partial — sensor outage', color: ROMA_BINS[2] },
-      { key: 'outage',      label: 'Total outage',            color: ROMA_BINS[4] },
+      { key: 'operational', label: 'Operational',                  color: ROMA_BINS[0] },
+      { key: 'known',       label: 'Partial — known outage',       color: ROMA_BINS[1] },
+      { key: 'partial',     label: 'Partial — new sensor outage',  color: ROMA_BINS[2] },
+      { key: 'outage',      label: 'Total outage',                 color: ROMA_BINS[4] },
     ],
   };
   const ROLES = { dark: ROLE_SETS, light: ROLE_SETS, 'high-contrast': ROLE_SETS };
@@ -82,6 +93,7 @@
   {
     const root = document.documentElement.style;
     root.setProperty('--status-fresh', ROMA_BINS[0]);
+    root.setProperty('--status-known', ROMA_BINS[1]);
     root.setProperty('--status-partial', ROMA_BINS[2]);
     root.setProperty('--status-stale', ROMA_BINS[4]);
   }
@@ -94,14 +106,17 @@
     return v || fallback;
   }
 
-  // Health mode classes, in status-health's order (operational, partial,
-  // outage); the colors come from the role registry.
+  // Health mode classes, in status-health's order (operational, known,
+  // partial, outage); the colors come from the role registry. `partial` keeps
+  // its key, so an old ?hcat=partial link still means "needs a look".
   const HEALTH_CLASSES = [
-    { key: 'operational', label: 'Operational',              short: 'operational'  },
-    { key: 'partial',     label: 'Partial — sensor outage',  short: 'partial'      },
-    { key: 'outage',      label: 'Total outage',             short: 'total outage' },
+    { key: 'operational', label: 'Operational',                 short: 'operational'           },
+    { key: 'known',       label: 'Partial — known outage',      short: 'partial, known outage' },
+    { key: 'partial',     label: 'Partial — new sensor outage', short: 'partial, new outage'   },
+    { key: 'outage',      label: 'Total outage',                short: 'total outage'          },
   ];
-  const healthClass = (key) => HEALTH_CLASSES.find(c => c.key === key) || HEALTH_CLASSES[2];
+  const healthClass = (key) => HEALTH_CLASSES.find(c => c.key === key)
+    || HEALTH_CLASSES.find(c => c.key === 'outage');
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const refreshStampEl  = document.getElementById('refresh-stamp');
@@ -120,8 +135,11 @@
     if (!s) return;
     const ts = latestById.get(stationId) ?? null;
     const when = ts == null ? 'no record' : `last reported ${relativeStamp(ts)}`;
-    const miss = missingElements(stationId);
-    const health = miss.length ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} not reporting` : '';
+    const { emergent, known } = splitMissing(stationId);
+    const health = [
+      emergent.length ? `${emergent.length} sensor${emergent.length === 1 ? '' : 's'} not reporting` : '',
+      known.length ? `${known.length} flagged outage${known.length === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join(', ');
     MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
   }
 
@@ -187,12 +205,55 @@
       return rec[k] == null;
     });
   }
+  // ── Known (flagged) outages ──────────────────────────────────────────
+  // An element's `outages` (from /elements/?all=true) lists every open
+  // registration behind it as {sn, ranges}; each range is an AirTable window
+  // of whole America/Denver days, [start] (ongoing) or [start, end],
+  // inclusive. `outages` is null when the API didn't say (per-station
+  // fallback, or an API without the column): unknown, so the sensor counts
+  // as a new outage, as before outage flags existed.
+  //
+  // Active today (MT): ISO date strings compare in date order.
+  function windowActive(range, today) {
+    const [start, end] = range;
+    return typeof start === 'string' && start <= today && (end == null || end >= today);
+  }
+  // The date an element became a known outage, or null if it isn't one.
+  // EVERY registration must be inside an active window: at a dual-chain depth
+  // with one chain flagged, the other chain still reports into the combined
+  // element, so a null there is news. Since = the latest of the chains'
+  // window starts (the day the last chain was flagged).
+  function knownOutageSince(el, today = MCO.todayMT()) {
+    if (!Array.isArray(el.outages) || !el.outages.length) return null;
+    let since = null;
+    for (const d of el.outages) {
+      const active = (d.ranges || []).filter((r) => windowActive(r, today));
+      if (!active.length) return null;
+      const start = active.map((r) => r[0]).sort()[0];
+      if (since == null || start > since) since = start;
+    }
+    return since;
+  }
+  // The station's silent sensors, split: `emergent` (no flag: news) first,
+  // then `known` (each with .since, an ISO date).
+  function splitMissing(stationId) {
+    const today = MCO.todayMT();
+    const emergent = [], known = [];
+    for (const el of missingElements(stationId)) {
+      const since = knownOutageSince(el, today);
+      if (since) known.push({ ...el, since }); else emergent.push(el);
+    }
+    return { emergent, known };
+  }
   // Health class: outage when there's no fresh record; otherwise partial if
-  // any expected sensor is silent. A station whose element list hasn't loaded
-  // (or failed) reads as operational — the legend note keeps that visible.
+  // any silent sensor is unflagged, known if every silent sensor is a flagged
+  // outage. A station whose element list hasn't loaded (or failed) reads as
+  // operational — the legend note keeps that visible.
   function healthKey(stationId, minSince) {
     if (minSince == null || minSince >= FRESH_MINUTES) return 'outage';
-    return elementsById.has(stationId) && missingElements(stationId).length ? 'partial' : 'operational';
+    if (!elementsById.has(stationId)) return 'operational';
+    const { emergent, known } = splitMissing(stationId);
+    return emergent.length ? 'partial' : known.length ? 'known' : 'operational';
   }
   // Discrete bin index for time-since mode: '0'..'4' (status-age's keys), or
   // 'null'. Strings, so the same value type covers both modes in URL params +
@@ -212,7 +273,8 @@
   // Health-mode inputs. elementsById holds the expected sensors per station
   // (deduped, sorted by sort_order); a station absent from it is "not loaded
   // yet" — elementsFailed tells that apart from "fetch failed this session".
-  let elementsById   = new Map();             // station id → [{code, label}]
+  let elementsById   = new Map();             // station id → [{code, label, outages}]
+  let elementsFetchedAt = new Map();          // station id → ms the list was fetched
   let elementsFailed = new Set();
   let _elementsProgress = { done: 0, total: 0, loading: false };
   // description_short → wide-record key ("Soil VWC @ -91 cm" → "Soil VWC @ -91 cm [%]").
@@ -726,35 +788,58 @@
   }
 
   // ── Expected element lists (Health mode) ─────────────────────────────────
-  // Cache shape: { v: 1, byStation: { [id]: { t: fetchedMs, els: [[code, label], …] } } }
-  // — arrays, not objects, keep ~245 stations under ~200 KB on the github.io
-  // origin this app shares with other MCO apps. Per-station timestamps so a
-  // re-instrumented station expires alone.
+  // Cache shape: { v: 2, byStation: { [id]: { t: fetchedMs, els: [[code, label, outages], …] } } }
+  // — arrays, not objects, keep ~245 stations small on the github.io origin
+  // this app shares with other MCO apps. `outages` is [[sn, ranges], …], or
+  // null when the source didn't carry the windows (see knownOutageSince).
+  // Per-station timestamps so a re-instrumented station expires alone.
   function readElementsCache() {
     try {
       const raw = MCO.lsGet(ELEMENTS_CACHE_KEY);
       const obj = raw ? JSON.parse(raw) : null;
-      if (!obj || obj.v !== 1 || typeof obj.byStation !== 'object') return {};
+      if (!obj || obj.v !== 2 || typeof obj.byStation !== 'object') return {};
       return obj.byStation;
     } catch { return {}; }
   }
   function writeElementsCache(byStation) {
-    MCO.lsSet(ELEMENTS_CACHE_KEY, JSON.stringify({ v: 1, byStation }));
+    MCO.lsSet(ELEMENTS_CACHE_KEY, JSON.stringify({ v: 2, byStation }));
   }
-  function setElements(stationId, els) {
+  const packEls = (els) => els.map((e) => [e.code, e.label,
+    Array.isArray(e.outages) ? e.outages.map((d) => [d.sn, d.ranges]) : null]);
+  const unpackEls = (rows) => rows.map(([code, label, o]) => ({ code, label,
+    outages: Array.isArray(o) ? o.map(([sn, ranges]) => ({ sn, ranges })) : null }));
+  // A list that carries outage windows goes stale with AirTable; one that
+  // doesn't only with re-instrumentation.
+  const hasOutageInfo = (els) => els.length > 0 && els.every((e) => Array.isArray(e.outages));
+  const elementsTtl = (els) => hasOutageInfo(els) ? OUTAGES_TTL_MS : ELEMENTS_TTL_MS;
+  function elementsExpired(id, now) {
+    const t = elementsFetchedAt.get(id);
+    return t == null || now - t > elementsTtl(elementsById.get(id) || []);
+  }
+  function setElements(stationId, els, t = Date.now()) {
     elementsById.set(stationId, els);
+    elementsFetchedAt.set(stationId, t);
     elementsFailed.delete(stationId);
   }
-  // Dedupe (the endpoint repeats rows), sort by the API's display order.
+  // Dedupe (the endpoint repeats rows), sort by the API's display order. A
+  // row's `outages` ([{serial_number, ranges}], bulk listing only) is kept as
+  // [{sn, ranges}]; without it, null (unknown).
   function normalizeElements(rows) {
     const byCode = new Map();
     for (const r of rows) {
       if (!r || typeof r.element !== 'string' || typeof r.description_short !== 'string') continue;
-      if (!byCode.has(r.element)) byCode.set(r.element, { code: r.element, label: r.description_short, order: r.sort_order ?? 0 });
+      if (byCode.has(r.element)) continue;
+      const outages = Array.isArray(r.outages)
+        ? r.outages.map((d) => ({
+          sn: d && d.serial_number != null ? String(d.serial_number) : null,
+          ranges: Array.isArray(d && d.ranges) ? d.ranges.filter((x) => Array.isArray(x) && typeof x[0] === 'string') : [],
+        }))
+        : null;
+      byCode.set(r.element, { code: r.element, label: r.description_short, order: r.sort_order ?? 0, outages });
     }
     return [...byCode.values()]
       .sort((a, b) => a.order - b.order || a.code.localeCompare(b.code))
-      .map(({ code, label }) => ({ code, label }));
+      .map(({ code, label, outages }) => ({ code, label, outages }));
   }
 
   // Run `fn` over `items` with at most `limit` in flight. No library: a shared
@@ -771,6 +856,7 @@
   }
 
   let _elementsInFlight = false;
+  let _elementsAnnounced = false;
   async function loadElements() {
     if (_elementsInFlight) return;
     const cache = readElementsCache();
@@ -778,15 +864,18 @@
     // 1. Seed from cache synchronously (fresh entries only).
     for (const s of stations) {
       const entry = cache[s.station];
-      if (!entry || !Array.isArray(entry.els)) continue;
-      if (now - (entry.t || 0) > ELEMENTS_TTL_MS) continue;
-      if (!elementsById.has(s.station)) {
-        setElements(s.station, entry.els.map(([code, label]) => ({ code, label })));
-      }
+      if (!entry || !Array.isArray(entry.els) || elementsById.has(s.station)) continue;
+      const els = unpackEls(entry.els);
+      if (now - (entry.t || 0) > elementsTtl(els)) continue;
+      setElements(s.station, els, entry.t);
     }
-    // 2. Fetch whatever is missing or expired.
-    let needed = stations.map(s => s.station).filter(id => !elementsById.has(id));
+    // 2. Fetch whatever is missing or expired. An expired list stays on the
+    // map until its replacement lands (refreshLatest calls this every 5 min).
+    const firstLoad = !_elementsAnnounced;
+    let needed = stations.map(s => s.station).filter(id => elementsExpired(id, now));
     _elementsProgress = { done: 0, total: needed.length, loading: needed.length > 0 };
+    // Only the first load shows progress: an hourly refresh is one request.
+    if (!firstLoad) _elementsProgress.loading = false;
     renderLegendNote();
     if (!needed.length) return;
 
@@ -803,8 +892,8 @@
         const t = Date.now();
         for (const id of needed) {
           const els = bulk.get(id) || [];
-          setElements(id, els);
-          cache[id] = { t, els: els.map(e => [e.code, e.label]) };
+          setElements(id, els, t);
+          cache[id] = { t, els: packEls(els) };
         }
         _elementsProgress.done = needed.length;
         needed = [];
@@ -817,15 +906,16 @@
         try {
           const rows = await MCO.fetchJSON(ELEMENTS_URL(id), { timeoutMs: ELEMENTS_TIMEOUT_MS });
           const els = normalizeElements(Array.isArray(rows) ? rows : []);
-          setElements(id, els);
-          cache[id] = { t: Date.now(), els: els.map(e => [e.code, e.label]) };
+          const t = Date.now();
+          setElements(id, els, t);
+          cache[id] = { t, els: packEls(els) };
           if (++sinceWrite >= ELEMENTS_PERSIST_EVERY) { sinceWrite = 0; writeElementsCache(cache); }
         } catch (err) {
           elementsFailed.add(id);
           console.warn(`elements/${id} failed:`, err.message);
         }
         _elementsProgress.done++;
-        renderLegendNote();           // cheap text update per completion
+        if (firstLoad) renderLegendNote();   // cheap text update per completion
         scheduleHealthRefresh();      // coalesced dot/count rebuild
       });
     } finally {
@@ -837,12 +927,18 @@
       if (failed && failed !== failedBefore) {
         MCO.showToast(`Sensor lists unavailable for ${failed} station${failed === 1 ? '' : 's'}`, 6000);
       }
-      const partial = countHealth().partial;
-      MCO.announce(`Sensor check complete: ${partial} station${partial === 1 ? '' : 's'} with sensors not reporting.`);
+      renderLegendNote();
+      // Once per page: the hourly refresh would otherwise chatter.
+      if (firstLoad) {
+        _elementsAnnounced = true;
+        const c = countHealth();
+        const n = (k) => `${c[k]} station${c[k] === 1 ? '' : 's'}`;
+        MCO.announce(`Sensor check complete: ${n('partial')} with new sensor outages, ${n('known')} with only known outages.`);
+      }
     }
   }
 
-  // GET /elements/?all=true → Map<station, [{code,label}]>, or null when the
+  // GET /elements/?all=true → Map<station, [{code,label,outages}]>, or null when the
   // response isn't the bulk shape (older API ignores the flag and returns the
   // catalog without a `station` column) or the request fails.
   async function loadElementsBulk() {
@@ -963,7 +1059,8 @@
       { key: 'status', label: 'Status' },
       { key: 'when', label: 'Last report (Mountain Time)' },
       { key: 'health', label: 'Health' },
-      { key: 'missing', label: 'Sensors not reporting' },
+      { key: 'missing', label: 'Sensors not reporting (new)' },
+      { key: 'known', label: 'Known outages (flagged)' },
       { key: 'site', label: 'Site' },
       { key: 'county', label: 'County' },
     ],
@@ -976,7 +1073,7 @@
       const ts = latestById.get(s.station) ?? null;
       const mins = minutesSince(ts);
       const bucket = statusBucket(mins);
-      const miss = missingElements(s.station);
+      const { emergent, known } = splitMissing(s.station);
       return {
         station: s.station,
         label: `${s.name} (${s.station})`,
@@ -984,9 +1081,10 @@
         status: bucket === 'null' ? 'no record' : bucket === 'fresh' ? 'reporting' : 'stale',
         when: ts == null ? 'no record' : `${MCO.formatStampMT(ts)} (${relativeStamp(ts)})`,
         health: healthClass(healthKey(s.station, mins)).short,
-        missing: miss.length ? miss.map(e => e.label).join(', ')
+        missing: emergent.length ? emergent.map(e => e.label).join(', ')
           : elementsById.has(s.station) ? null
           : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading',
+        known: known.length ? known.map(e => `${e.label} (since ${MCO.formatDateStr(e.since)})`).join(', ') : null,
         // The count badge, as text: the canvas spider is pointer-only.
         site: (() => {
           const n = (coloc && coloc.info(s.station) || { count: 1 }).count;
@@ -1001,19 +1099,24 @@
   // Counts run over the visible-network stations (shownStations), never
   // filtered by the legend toggles.
   function countHealth() {
-    const counts = { operational: 0, partial: 0, outage: 0, total: 0, unknown: 0 };
+    const counts = { operational: 0, known: 0, partial: 0, outage: 0, total: 0, unknown: 0, noFlags: 0 };
     for (const s of shownStations()) {
       const mins = minutesSince(latestById.get(s.station) ?? null);
       const key = healthKey(s.station, mins);
       counts[key]++;
       counts.total++;
-      if (key !== 'outage' && !elementsById.has(s.station)) counts.unknown++;
+      if (key === 'outage') continue;
+      const els = elementsById.get(s.station);
+      if (!els) counts.unknown++;
+      else if (els.length && !hasOutageInfo(els)) counts.noFlags++;
     }
     return counts;
   }
 
   // Legend footer note, Health mode only: progress while element lists stream
-  // in, then how many fresh stations lack a list (they count as operational).
+  // in, then how many fresh stations lack a list (they count as operational)
+  // or lack outage flags (an API without them: every silent sensor reads as
+  // new, so say so rather than imply zero known outages).
   // Not aria-live — it'd chatter; the one-time completion goes to MCO.announce.
   function renderLegendNote() {
     const el = document.getElementById('legend-note');
@@ -1023,8 +1126,11 @@
       if (_elementsProgress.loading) {
         txt = `Checking sensors… ${_elementsProgress.done}/${_elementsProgress.total}`;
       } else {
-        const u = countHealth().unknown;
-        if (u) txt = `${u} station${u === 1 ? '' : 's'} without sensor list`;
+        const { unknown: u, noFlags: f } = countHealth();
+        txt = [
+          u ? `${u} station${u === 1 ? '' : 's'} without sensor list` : '',
+          f ? `Outage flags unavailable for ${f} station${f === 1 ? '' : 's'}` : '',
+        ].filter(Boolean).join(' · ');
       }
     }
     el.textContent = txt;
@@ -1244,10 +1350,10 @@
     tags.append(el('span', 'pop-badge', s.sub_network || '—'),
       pill(status, pillLbl));
     const hKey = healthKey(stationId, mins);
-    const miss = missingElements(stationId);
+    const { emergent, known } = splitMissing(stationId);
     if (!(hKey === 'outage' && status === 'null')) {
-      const hLbl = hKey === 'partial'
-        ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
+      const hLbl = hKey === 'partial' ? `${emergent.length} sensor${emergent.length === 1 ? '' : 's'} down`
+        : hKey === 'known' ? `${known.length} known outage${known.length === 1 ? '' : 's'}`
         : healthClass(hKey).short;
       tags.append(pill(hKey, hLbl));
     }
@@ -1257,16 +1363,24 @@
     root.insertBefore(tags, before);
     root.insertBefore(stamp, before);
 
-    // The sensors behind a "partial" verdict. Only for a fresh station: a
-    // stale station's sensor list is moot.
+    // The sensors behind a "partial" or "known" verdict, news first. Only for
+    // a fresh station: a stale station's sensor list is moot.
     if (hKey !== 'outage') {
-      if (miss.length) {
+      if (emergent.length) {
         const box = el('div', 'pop-missing');
         const ul = el('ul');
-        for (const e of miss) ul.append(el('li', null, e.label));
+        for (const e of emergent) ul.append(el('li', null, e.label));
         box.append(el('strong', null, 'Sensors not reporting'), ul);
         root.insertBefore(box, before);
-      } else if (!elementsById.has(stationId)) {
+      }
+      if (known.length) {
+        const box = el('div', 'pop-missing pop-known');
+        const ul = el('ul');
+        for (const e of known) ul.append(el('li', null, `${e.label} — flagged since ${MCO.formatDateStr(e.since)}`));
+        box.append(el('strong', null, 'Known outages'), ul);
+        root.insertBefore(box, before);
+      }
+      if (!emergent.length && !known.length && !elementsById.has(stationId)) {
         root.insertBefore(el('div', 'pop-missing pop-missing-note',
           elementsFailed.has(stationId) ? 'Sensor list unavailable' : 'Checking sensors…'), before);
       }
@@ -1436,9 +1550,11 @@
     const s = stationById.get(stationId);
     if (!s) return null;
     const ts = latestById.get(stationId) ?? null;
-    const miss = healthKey(stationId, minutesSince(ts)) === 'partial' ? missingElements(stationId).length : 0;
+    const fresh = healthKey(stationId, minutesSince(ts)) !== 'outage';
+    const { emergent, known } = fresh ? splitMissing(stationId) : { emergent: [], known: [] };
     const lines = ts == null ? ['no record'] : [relativeStamp(ts), MCO.formatStampMT(ts)];
-    if (miss) lines.push(`${miss} sensor${miss === 1 ? '' : 's'} not reporting`);
+    if (emergent.length) lines.push(`${emergent.length} sensor${emergent.length === 1 ? '' : 's'} not reporting`);
+    if (known.length) lines.push(`${known.length} known outage${known.length === 1 ? '' : 's'}`);
     const n = f.properties.colocationCount;
     if (n > 1) lines.push(`${n} stations at this site`);
     return { name: s.name, sub: s.station, line: lines };
