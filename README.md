@@ -8,9 +8,9 @@ Shows the current reporting state of every station across the HydroMet and AgriM
 
 - **Status** — single threshold: dot color reflects whether the station has posted within the last 2 hours.
 - **Time since** — five bins of "minutes since the latest record," ceiling at >24 h.
-- **Health** — three classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial**: reported within the 2 hours, but one or more expected sensors are null in the latest record (the station details list them). **Total outage**: no report in the last 2 hours, or no record at all.
+- **Health** — four classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial — new sensor outage** (`partial`): reported within the 2 hours, but at least one expected sensor is null in the latest record and not flagged. **Partial — known outage** (`known`): every null sensor is a flagged outage from the AirTable Outages table, which QC nulls on purpose. **Total outage**: no report in the last 2 hours, or no record at all. The station details list new outages first, then known ones with the date they were flagged.
 
-In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
+In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational) or no outage flags (every silent sensor there reads as new).
 
 Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale, held in app.js's role registry. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale. A station with no record is a hollow dot.
 
@@ -45,7 +45,7 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
 | `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
 | `tcat`    | list (`0+1+2+3+4`, `null`)                | Visible Time-since bins (0 = `<2 h`, 4 = `>24 h`). Omitted = all. |
-| `hcat`    | list (`operational+partial+outage`)       | Visible Health classes. Omitted = all.        |
+| `hcat`    | list (`operational+known+partial+outage`) | Visible Health classes. Omitted = all.        |
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
 | `theme`   | `light` \| `dark` \| `high-contrast`       | Theme override. Omitted when it matches the OS preference. |
@@ -68,9 +68,11 @@ Examples:
 
 - Stations + metadata: <https://mesonet2.climate.umt.edu/api/stations/?type=json>
 - Latest record per station: <https://mesonet2.climate.umt.edu/api/latest/?type=json>
-- Expected elements (sensors) for the whole network: <https://mesonet2.climate.umt.edu/api/elements/?all=true&type=json> (one request; rows carry a `station` column). If the API doesn't serve `all` yet, it ignores the flag and returns the bare catalog, which the app detects by the missing `station` column and falls back to the per-station form `https://mesonet2.climate.umt.edu/api/elements/<station>/?type=json` (e.g. <https://mesonet2.climate.umt.edu/api/elements/acemidwa/?type=json>). Without `type=json` the endpoints return HTML; per-station rows are duplicated and are de-duplicated by `element`.
+- Expected elements (sensors) for the whole network: <https://mesonet2.climate.umt.edu/api/elements/?all=true&type=json> (one request; rows carry a `station` column and an `outages` column, below). If the API doesn't serve `all` yet, it ignores the flag and returns the bare catalog, which the app detects by the missing `station` column and falls back to the per-station form `https://mesonet2.climate.umt.edu/api/elements/<station>/?type=json` (e.g. <https://mesonet2.climate.umt.edu/api/elements/acemidwa/?type=json>). Without `type=json` the endpoints return HTML; per-station rows are duplicated and are de-duplicated by `element`.
 
-**Health** cross-references the two: an expected element whose `description_short` column (`"<description_short> [<unit>]"`) is null in the station's latest record counts as a sensor not reporting. The element lists are fetched once (one bulk request, or 8 concurrent per-station requests on the fallback path, ~10 s cold for the full network) and cached in `localStorage` under `mco-status-elements-v1` with a 24 h per-station TTL, so a reload paints Health from cache immediately. Clear that key (or the site's storage) to force a refetch. Stations whose list fails to load are counted as operational when fresh and called out in the panel footer.
+**Health** cross-references the two: an expected element whose `description_short` column (`"<description_short> [<unit>]"`) is null in the station's latest record counts as a sensor not reporting. The element lists are fetched once (one bulk request, or 8 concurrent per-station requests on the fallback path, ~10 s cold for the full network) and cached in `localStorage` under `mco-status-elements-v2`, so a reload paints Health from cache immediately. Lists from the bulk request expire after 1 h, because they carry outage windows; per-station lists expire after 24 h. An expired list is refetched on the 5-minute poll and stays on the map until its replacement arrives.
+
+**Known vs. new outages.** Each bulk row's `outages` lists every open registration behind the element as `{serial_number, ranges}`. The ranges are the AirTable outage windows: `[start]` (ongoing) or `[start, end]`, whole America/Denver days, inclusive. A null element is a *known* outage only when **every** registration has a window covering today in Mountain Time. At a dual-chain soil depth with one chain flagged, the other chain still reports into the combined element, so a null there is news. Without the column (older API, or the per-station fallback) every null counts as new. Clear that key (or the site's storage) to force a refetch. Stations whose list fails to load are counted as operational when fresh and called out in the panel footer.
 
 All API reads go to `mesonet2.climate.umt.edu` (the page CSP's `connect-src` pins that host). The per-station dashboard link stays on `mesonet.climate.umt.edu/dash/`.
 

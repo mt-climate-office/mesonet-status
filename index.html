@@ -132,7 +132,8 @@
          no-JS fallback for the sheet pills; verify.config.mjs checks they
          match. Data-encoding (§6). */
       --status-fresh:   #1e5fac;  /* roma blue (bin 0) */
-      --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" */
+      --status-known:   #4bb2ce;  /* roma cyan (bin 1) — Health "known outage" */
+      --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" (new) */
       --status-stale:   #984e14;  /* roma brown (bin 4) */
       --status-null:    #9aa3b3;
     }
@@ -250,9 +251,10 @@
     .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
     .pop-pill.stale { background: var(--status-stale); color: #fff; }
     .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
-    /* Health pills reuse the same three data colors. #1a1a2e on the pale
-       roma middle: 12.83:1. */
+    /* Health pills reuse the same data colors. #1a1a2e on the pale roma
+       middle: 12.83:1; on the bin-1 cyan: 6.95:1 (#fff would be 2.45:1). */
     .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
+    .pop-pill.known       { background: var(--status-known);   color: #1a1a2e; }
     .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
     .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
     .pop-siblings { margin-top: 10px; }
@@ -511,7 +513,7 @@
       <ul>
         <li><strong>Status</strong>: reported in the last 2 hours, or stale (2 hours or more).</li>
         <li><strong>Time since</strong>: 5 bins from under 2 hours to over 24 hours.</li>
-        <li><strong>Health</strong>: <strong>Operational</strong> reported in the last 2 hours with every expected sensor present. <strong>Partial</strong> reported, but one or more sensors are silent (the station's details list them). <strong>Total outage</strong> has not reported in the last 2 hours.</li>
+        <li><strong>Health</strong>: <strong>Operational</strong> reported in the last 2 hours with every expected sensor present. <strong>Partial — new sensor outage</strong> reported, but one or more sensors are silent and not yet flagged. <strong>Partial — known outage</strong> reported, and every silent sensor is a flagged outage (staff have logged it and its data is withheld). The station's details list both, news first. <strong>Total outage</strong> has not reported in the last 2 hours.</li>
       </ul>
       <p>A hollow dot has no record. HydroMet and AgriMet stations draw the same; the network chips show or hide each network.</p>
     </div>
