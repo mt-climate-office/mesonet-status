@@ -11,11 +11,14 @@
 // layers empty while the table still fills).
 import { load } from '../mco-web-style/tools/verify/lib.mjs';
 
-const STATION = 'aceabsar';   // a real id from /api/stations/
+const STATION = 'aceabsar';   // a real id from /api/stations/ (a colocated HydroMet + AgriMet site)
 const rows = () => document.querySelectorAll('#sr-station-table tbody tr').length > 100;
-// The station detail: the anchored popup (desktop) or the bottom sheet
-// (compact, kit 0.9.0 MCO.initSheet). Inlined in each page function below —
-// a function passed to the page can't close over this module.
+// The station detail is the kit sheet at every width (MCO.initSheet, kit
+// 0.21.0), open when it is shown and not data-state="closed". Inlined in
+// each page function below — a function passed to the page can't close over
+// this module.
+const PHONE = { width: 390, height: 844, touch: true };
+const DESKTOP = { width: 1440, height: 900 };
 
 // Pixels in a screenshot of the map close to one of the status colors.
 async function colorPixels(page, hexes) {
@@ -40,50 +43,78 @@ export default {
   scenarios: [
     { name: 'default', query: '', ready: rows },
     { name: 'health', query: '?mode=health', ready: rows },
+    { name: 'timesince', query: '?mode=timesince', ready: rows },
     {
+      // The deep link opens the station sheet (kit 0.21.0), at 1440 and 390.
       name: 'station', query: `?station=${STATION}`,
-      // Anchored popup (desktop) or the bottom sheet (compact, kit 0.9.0).
       ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
-        && !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
+        && [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed'),
     },
   ],
   exemptTargets: '',
   allowProblems: [],
   dialogOpener: '.mco-btn-info',
   shortcuts: [{ key: '/', effect: () => document.activeElement?.id === 'search-input' }],
-  probes: async ({ env, open, check }) => {
+  probes: async ({ env, open: open30, check }) => {
     const tag = `[${env.engine}]`;
+    // MapLibre on SwiftShader is slow when the machine is busy: give every
+    // probe page 60 s to show its render evidence, not the default 30.
+    const open = (q, o = {}) => open30(q, { timeout: 60000, ...o });
+    // The kit's category sets, per theme, as the page reads them.
+    const setColors = (page, name) => page.evaluate((n) => MCO.palette.categorySet(n, MCO.getTheme()).map((c) => c.color), name);
+    const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed');
     {
       const { page, close } = await open('?theme=light');
       await page.waitForTimeout(1500);
-      // Status mode: roma blue (#1e5fac) = fresh, roma brown (#984e14) = stale.
-      const [fresh, stale] = await colorPixels(page, ['#1e5fac', '#984e14']);
-      check(`${tag} map paints station dots (fresh ${fresh}px, stale ${stale}px)`, fresh > 150);
-      // One source for the ramp: the bins come from MCO.palette, and the no-JS
-      // --status-* literals in index.html must be the same samples.
-      const ramp = await page.evaluate(() => {
-        const want = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
-        const css = document.querySelector('style').textContent;
-        const lit = (n) => (css.match(new RegExp('--status-' + n + ':\\s*(#[0-9a-f]{6})', 'i')) || [])[1];
-        const live = (n) => getComputedStyle(document.documentElement).getPropertyValue('--status-' + n).trim();
-        return { want, lit: [lit('fresh'), lit('partial'), lit('stale')], live: [live('fresh'), live('partial'), live('stale')] };
-      });
-      const exp = [ramp.want[0], ramp.want[2], ramp.want[4]].join();
-      check(`${tag} --status-* literals and live values = roma bins 0/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
+      // Status mode, kit status-reporting set: fresh and stale markers painted.
+      const [fresh, stale] = await setColors(page, 'status-reporting');
+      const [nFresh] = await colorPixels(page, [fresh]);
+      check(`${tag} map paints station dots in the kit's fresh color ${fresh} (${nFresh}px)`, nFresh > 150);
+      // Legend: the kit set's rows and colors, circle swatches (the marker's
+      // shape), No record hollow, and no network rows (kit 0.21.0: no network
+      // encoding on markers).
+      const lg = await page.evaluate(() => ({
+        rows: [...document.querySelectorAll('#legend-rows .mco-legend-row')].map((r) => {
+          const sw = r.querySelector('.mco-legend-swatch');
+          return { key: r.dataset.key, shape: sw.dataset.shape, color: sw.style.getPropertyValue('--swatch').trim() };
+        }),
+        net: document.querySelectorAll('.legend-networks, .legend-network').length,
+        legendText: document.getElementById('legend-rows').textContent,
+      }));
+      const want = JSON.stringify([{ key: 'fresh', shape: 'circle', color: fresh }, { key: 'stale', shape: 'circle', color: stale }]);
+      check(`${tag} legend = kit status-reporting set, circle swatches, No record hollow, no network rows`,
+        JSON.stringify(lg.rows.slice(0, 2)) === want && lg.rows[2]?.key === 'null' && lg.rows[2]?.shape === 'hollow'
+          && lg.net === 0 && !/HydroMet|AgriMet/.test(lg.legendText), JSON.stringify(lg));
       const q = await page.evaluate(() => location.search);
       check(`${tag} defaults elided from the URL on load (${q})`, !/mode=|net=|scat=|legend=/.test(q));
+      // Freshness stamp (kit 0.21.0): "Updated 9:40 PM MST" from the data's time.
+      const stamp = await page.evaluate(() => document.querySelector('.refresh-status').textContent.replace(/\s+/g, ' ').trim());
+      check(`${tag} stamp reads "Updated … M[SD]T" ("${stamp}")`, /^Updated .* M[SD]T$/.test(stamp));
       await close();
     }
     {
       const { page, close } = await open('?theme=dark');
       await page.waitForTimeout(1500);
-      const [fresh] = await colorPixels(page, ['#1e5fac']);
-      check(`${tag} dark basemap: station dots painted (fresh ${fresh}px)`, fresh > 150);
-      // Theme flip restyles the map; dots must come back after style.load.
+      const [fresh] = await setColors(page, 'status-reporting');
+      const [n] = await colorPixels(page, [fresh]);
+      check(`${tag} dark basemap: station dots painted in ${fresh} (${n}px)`, n > 150);
+      // Theme flip restyles the map; dots must come back after style.load, in
+      // the new theme's set color.
       await page.click('#btn-theme');
       await page.waitForTimeout(3500);
-      const [fresh2] = await colorPixels(page, ['#1e5fac']);
-      check(`${tag} dots repainted after a theme flip (fresh ${fresh2}px)`, fresh2 > 150);
+      const [fresh2] = await setColors(page, 'status-reporting');
+      const [n2] = await colorPixels(page, [fresh2]);
+      check(`${tag} dots repainted after a theme flip in ${fresh2} (${n2}px)`, n2 > 150 && fresh2 !== fresh);
+      await close();
+    }
+    {
+      // Time since: the kit status-age set's five bins, in legend order.
+      const { page, close } = await open('?mode=timesince&theme=light');
+      const r = await page.evaluate(() => ({
+        sw: [...document.querySelectorAll('#legend-rows .mco-legend-row .mco-legend-swatch')].map((s) => s.style.getPropertyValue('--swatch').trim()),
+        want: MCO.palette.categorySet('status-age', 'light').map((c) => c.color),
+      }));
+      check(`${tag} Time since legend = kit status-age set`, JSON.stringify(r.sw.slice(0, 5)) === JSON.stringify(r.want), JSON.stringify(r));
       await close();
     }
     {
@@ -97,14 +128,79 @@ export default {
       check(`${tag} Health segment pressed`, pressed === 'true');
       await close();
     }
+    for (const [name, viewport] of [['1440', DESKTOP], ['390', PHONE]]) {
+      // Deep link (kit 0.21.0): ?station= opens the sheet at both widths, in
+      // both motion settings (a reduced-motion jump is the case that used to
+      // open nothing), and the intro stays shut.
+      for (const reducedMotion of ['no-preference', 'reduce']) {
+        const { page, close } = await open(`?station=${STATION}`, { viewport, reducedMotion, ready: rows });
+        const ok = await page.waitForFunction(sheetOpen, null, { timeout: 15000 }).then(() => true, () => false);
+        const st = await page.evaluate(() => ({
+          title: document.querySelector('.mco-sheet-title')?.textContent,
+          popup: !!document.querySelector('.maplibregl-popup'),
+          intro: !!document.querySelector('#info-modal[open]'),
+          q: location.search,
+        }));
+        check(`${tag} ${name} ${reducedMotion}: ?station= opens the sheet (${JSON.stringify(st)})`,
+          ok && st.title === 'Absarokee' && !st.popup && !st.intro && /station=aceabsar/.test(st.q));
+        await close();
+      }
+      // Back closes it: open from a no-detail state (a search pick pushes an
+      // entry), then Back.
+      {
+        const { page, close } = await open('', { viewport });
+        if (!(await page.isVisible('#search-input'))) await page.click('#btn-rail-search');
+        await page.fill('#search-input', 'absar');
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Enter');
+        const opened = await page.waitForFunction(sheetOpen, null, { timeout: 15000 }).then(() => true, () => false);
+        const q1 = await page.evaluate(() => location.search);
+        await page.goBack({ waitUntil: 'commit' });
+        await page.waitForTimeout(1200);
+        const after = await page.evaluate(() => ({
+          open: [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed'),
+          q: location.search,
+        }));
+        check(`${tag} ${name}: search opens the sheet (${q1}), Back closes it (${after.q})`,
+          opened && /station=aceabsar/.test(q1) && !after.open && !/station=/.test(after.q), JSON.stringify(after));
+        await close();
+      }
+    }
     {
-      const { page, close } = await open(`?station=${STATION}`, {
-        ready: () => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'),
-      });
-      const title = await page.evaluate(() => (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent);
-      check(`${tag} ?station= opens the station's details (${title})`, !!title);
-      const intro = await page.evaluate(() => !!document.querySelector('#info-modal[open]'));
-      check(`${tag} deep link suppresses the intro modal`, !intro);
+      // Colocation (kit MCO.map.colocation): aceabsar's site is two stations;
+      // the sheet lists the other one, and hiding AgriMet makes it a plain dot.
+      const { page, close } = await open(`?station=${STATION}`, { ready: rows });
+      await page.waitForFunction(sheetOpen, null, { timeout: 15000 }).catch(() => {});
+      const sib = await page.evaluate(() => [...document.querySelectorAll('.pop-siblings button')].map((b) => b.textContent));
+      const site = await page.evaluate(() => [...document.querySelectorAll('#sr-station-table tbody tr')]
+        .find((tr) => /\(aceabsar\)/.test(tr.textContent))?.textContent || '');
+      check(`${tag} colocated site: sheet lists the other station (${sib.join(', ')}), table says 2 at this site`,
+        sib.length === 1 && /AgriMet/.test(sib[0]) && /2 stations at this site/.test(site));
+      await close();
+    }
+    {
+      // Chip toggle: a network chip is .mco-chip[aria-pressed]; pressing it
+      // hides that network (table rows drop, ?net= written) and back.
+      const { page, close } = await open('');
+      const n0 = await page.evaluate(() => document.querySelectorAll('#sr-station-table tbody tr').length);
+      const chip = page.locator('#subnet-filters .mco-chip[data-network="AgriMet"]');
+      await chip.click();
+      await page.waitForTimeout(800);
+      const off = await page.evaluate(() => ({
+        pressed: document.querySelector('#subnet-filters [data-network="AgriMet"]').getAttribute('aria-pressed'),
+        rows: document.querySelectorAll('#sr-station-table tbody tr').length,
+        q: location.search,
+      }));
+      await chip.click();
+      await page.waitForTimeout(800);
+      const on = await page.evaluate(() => ({
+        pressed: document.querySelector('#subnet-filters [data-network="AgriMet"]').getAttribute('aria-pressed'),
+        rows: document.querySelectorAll('#sr-station-table tbody tr').length,
+        q: location.search,
+      }));
+      check(`${tag} AgriMet chip toggles the network (${n0} → ${off.rows} → ${on.rows}, ${off.q})`,
+        off.pressed === 'false' && off.rows < n0 && off.rows > 100 && /net=hydromet/.test(off.q)
+          && on.pressed === 'true' && on.rows === n0 && !/net=/.test(on.q), JSON.stringify({ off, on }));
       await close();
     }
     {
@@ -119,6 +215,71 @@ export default {
       }));
       check(`${tag} legend row toggles a category (${JSON.stringify(st)})`, st.pressed === 'false' && /scat=/.test(st.q));
       await close();
+    }
+    {
+      // Phone bar (kit 0.21.0 compact drawer): one row ≤ 64px, badge at the
+      // left edge, ☰ at the right; ☰ opens the right drawer with focus inside,
+      // the page inert and axe clean in every theme; Esc returns focus to ☰.
+      const { AxeBuilder } = await load('@axe-core/playwright');
+      for (const theme of ['dark', 'light', 'high-contrast']) {
+        const { page, close } = await open(`?theme=${theme}`, { viewport: PHONE });
+        const bar = await page.evaluate(() => {
+          const r = (el) => el.getBoundingClientRect();
+          const nav = document.getElementById('navbar');
+          return { h: Math.round(r(nav).height), logo: Math.round(r(document.querySelector('.logo-link')).left),
+            menuRight: Math.round(nav.clientWidth - r(document.getElementById('btn-rail-menu')).right),
+            mode: Math.round(r(document.getElementById('rail-mode-select')).height) };
+        });
+        await page.click('#btn-rail-menu');
+        await page.waitForTimeout(400);
+        // Measure once the drawer's slide-in (a 12px nudge) has settled.
+        await page.waitForFunction(() => getComputedStyle(document.getElementById('nav-drawer')).transform === 'none', null, { timeout: 5000 }).catch(() => {});
+        const o = await page.evaluate(() => {
+          const d = document.getElementById('nav-drawer').getBoundingClientRect();
+          return { inside: document.getElementById('nav-drawer').contains(document.activeElement),
+            inert: document.getElementById('main').inert, right: Math.round(window.innerWidth - d.right), w: Math.round(d.width),
+            stamp: document.querySelector('#nav-drawer .refresh-status').textContent.replace(/\s+/g, ' ').trim() };
+        });
+        const ax = await new AxeBuilder({ page }).analyze();
+        const bad = ax.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+        const c = await page.evaluate(() => ({ focus: document.activeElement?.id, inert: document.getElementById('main').inert }));
+        check(`${tag} 390 ${theme}: one-row bar ${bar.h}px (badge left, ☰ right, mode ${bar.mode}px); drawer opens right with focus+inert, "${o.stamp}"; axe ${bad.length}; Esc back to ☰`,
+          bar.h <= 64 && bar.logo <= 16 && bar.menuRight <= 16 && bar.mode === 40 && o.inside && o.inert && o.right === 0 && o.w > 200
+            && /^Updated /.test(o.stamp) && bad.length === 0 && c.focus === 'btn-rail-menu' && !c.inert,
+          JSON.stringify({ bar, o, c, bad: bad.map((v) => v.id) }));
+        await close();
+      }
+      // The bar's search button opens the drawer on the field; the mode hot
+      // control switches the mode.
+      const { page, close } = await open('', { viewport: PHONE });
+      await page.click('#btn-rail-search');
+      await page.waitForTimeout(400);
+      const s = await page.evaluate(() => ({ focus: document.activeElement?.id, open: document.getElementById('nav-drawer').classList.contains('is-open') }));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(400);
+      const back = await page.evaluate(() => document.activeElement?.id);
+      await page.selectOption('#rail-mode-select', 'health');
+      await page.waitForTimeout(600);
+      const m = await page.evaluate(() => ({ q: location.search, title: document.getElementById('legend-title').textContent, drawer: document.getElementById('mode-select').value }));
+      check(`${tag} 390: search button opens the drawer on the field, Esc back (${JSON.stringify(s)}, ${back}); mode select → ${JSON.stringify(m)}`,
+        s.focus === 'search-input' && s.open && back === 'btn-rail-search' && /mode=health/.test(m.q) && m.title === 'Station health' && m.drawer === 'health');
+      await close();
+    }
+    {
+      // First-visit intro (kit initInfoModal intro): opens once on a plain
+      // visit with focus on its close button, never over a deep link.
+      const { page, close } = await open('', { storage: {} });
+      await page.waitForFunction(() => !!document.querySelector('#info-modal[open]'), null, { timeout: 10000 }).catch(() => {});
+      const a = await page.evaluate(() => ({ open: !!document.querySelector('#info-modal[open]'), focus: document.activeElement?.matches('#info-modal .modal-close'), seen: localStorage.getItem('mco-status-seen-intro') }));
+      await close();
+      const d = await open(`?station=${STATION}`, { storage: {}, ready: rows });
+      await d.page.waitForTimeout(1500);
+      const b = await d.page.evaluate(() => ({ open: !!document.querySelector('#info-modal[open]'), seen: localStorage.getItem('mco-status-seen-intro') }));
+      await d.close();
+      check(`${tag} intro: opens once on a plain visit (focus on close), not over ?station= (${JSON.stringify({ a, b })})`,
+        a.open && a.focus && a.seen === '1' && !b.open && b.seen === null);
     }
     {
       // Landscape phone (kit 0.10.0 rail): the bar is a 56px rail; the menu
@@ -138,7 +299,7 @@ export default {
       // Attribution is a licence requirement: at 390 (where it wraps across
       // the whole bottom edge) every credit link must be the topmost element
       // at its centre, and the legend must not overlap it.
-      const { page, close } = await open('?legend=open', { viewport: { width: 390, height: 844, touch: true } });
+      const { page, close } = await open('?legend=open', { viewport: PHONE });
       const r = await page.evaluate(() => {
         const L = document.getElementById('legend').getBoundingClientRect();
         const A = document.querySelector('.maplibregl-ctrl-attrib').getBoundingClientRect();
@@ -149,18 +310,6 @@ export default {
         return { gap: Math.round(A.top - L.bottom), blocked };
       });
       check(`${tag} 390: legend clears the attribution (gap ${r.gap}px), every credit clickable`, r.gap >= 0 && r.blocked.length === 0, JSON.stringify(r));
-      await close();
-    }
-    {
-      // Search: type, pick with Enter, popup opens.
-      const { page, close } = await open('');
-      // Typing makes the best match active (MCO.initSearchBox); Enter picks it.
-      await page.fill('#search-input', 'absar');
-      await page.waitForTimeout(300);
-      await page.keyboard.press('Enter');
-      await page.waitForFunction(() => !!document.querySelector('.maplibregl-popup .mco-popup-title, .mco-sheet:not([hidden]) .mco-sheet-title:not(:empty)'), null, { timeout: 15000 }).catch(() => {});
-      const st = await page.evaluate(() => ({ title: (document.querySelector('.maplibregl-popup .mco-popup-title') || document.querySelector('.mco-sheet:not([hidden]) .mco-sheet-title'))?.textContent, q: location.search }));
-      check(`${tag} search → Enter opens the station (${JSON.stringify(st)})`, !!st.title && /station=/.test(st.q));
       await close();
     }
   },

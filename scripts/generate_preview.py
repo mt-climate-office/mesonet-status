@@ -22,7 +22,8 @@ from playwright.sync_api import sync_playwright
 OUT   = Path(__file__).parent.parent / "assets" / "og-card.png"
 URL   = "https://mt-climate-office.github.io/mesonet-status/"
 QUERY = "mode=status"
-# After the station data lands (the refresh stamp reads "refreshed …"), give
+# After the station data lands (the freshness stamp reads "Updated …", kit
+# 0.21.0 MCO.formatUpdatedMT; it reads "Loading…" until then), give
 # the basemap tiles and the dot layer time to finish painting.
 SETTLE_MS = 4_000
 
@@ -44,7 +45,7 @@ def main() -> None:
         print(f"Loading {URL}?{QUERY} …")
         page.goto(f"{URL}?{QUERY}", wait_until="networkidle", timeout=60_000)
         page.wait_for_function(
-            "document.getElementById('refresh-stamp')?.textContent.startsWith('refreshed')",
+            "document.getElementById('refresh-stamp')?.textContent.startsWith('Updated')",
             timeout=60_000,
         )
         page.wait_for_timeout(SETTLE_MS)
