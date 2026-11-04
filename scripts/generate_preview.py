@@ -15,6 +15,7 @@ Usage:
     python scripts/generate_preview.py
 """
 
+import re
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -44,10 +45,10 @@ def main() -> None:
 
         print(f"Loading {URL}?{QUERY} …")
         page.goto(f"{URL}?{QUERY}", wait_until="networkidle", timeout=60_000)
-        page.wait_for_function(
-            "document.getElementById('refresh-stamp')?.textContent.startsWith('Updated')",
-            timeout=60_000,
-        )
+        # A locator, not wait_for_function: the page CSP has no 'unsafe-eval',
+        # so a string predicate that has to poll throws EvalError instead of
+        # waiting (it only ever passed when the stamp was ready at networkidle).
+        page.locator("#refresh-stamp", has_text=re.compile(r"^Updated ")).wait_for(timeout=60_000)
         page.wait_for_timeout(SETTLE_MS)
 
         page.screenshot(path=str(OUT))
