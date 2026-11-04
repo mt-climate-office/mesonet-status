@@ -60,17 +60,33 @@ export default {
     // MapLibre on SwiftShader is slow when the machine is busy: give every
     // probe page 60 s to show its render evidence, not the default 30.
     const open = (q, o = {}) => open30(q, { timeout: 60000, ...o });
-    // The kit's category sets, per theme, as the page reads them.
-    const setColors = (page, name) => page.evaluate((n) => MCO.palette.categorySet(n, MCO.getTheme()).map((c) => c.color), name);
+    // The app's category colors (its role registry, kept over the kit 0.21.0
+    // sets): the roma sample, bins 0/4 for Status, all five for Time since.
+    const roma = (page) => page.evaluate(() => MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true }));
+    const setColors = async (page, name) => {
+      const r = await roma(page);
+      return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[2], r[4]] : [r[0], r[4]];
+    };
     const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed');
     {
       const { page, close } = await open('?theme=light');
       await page.waitForTimeout(1500);
-      // Status mode, kit status-reporting set: fresh and stale markers painted.
+      // Status mode: roma blue = fresh, roma brown = stale.
       const [fresh, stale] = await setColors(page, 'status-reporting');
       const [nFresh] = await colorPixels(page, [fresh]);
-      check(`${tag} map paints station dots in the kit's fresh color ${fresh} (${nFresh}px)`, nFresh > 150);
-      // Legend: the kit set's rows and colors, circle swatches (the marker's
+      check(`${tag} map paints station dots in the fresh color ${fresh} (${nFresh}px)`, nFresh > 150);
+      // One source for the ramp: the --status-* literals in index.html (the
+      // pills' no-JS fallback) and the live values are roma bins 0/2/4.
+      const ramp = await page.evaluate(() => {
+        const want = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
+        const css = document.querySelector('style').textContent;
+        const lit = (n) => (css.match(new RegExp('--status-' + n + ':\\s*(#[0-9a-f]{6})', 'i')) || [])[1];
+        const live = (n) => getComputedStyle(document.documentElement).getPropertyValue('--status-' + n).trim();
+        return { want, lit: [lit('fresh'), lit('partial'), lit('stale')], live: [live('fresh'), live('partial'), live('stale')] };
+      });
+      const exp = [ramp.want[0], ramp.want[2], ramp.want[4]].join();
+      check(`${tag} --status-* literals and live values = roma bins 0/2/4 (${exp})`, ramp.lit.join().toLowerCase() === exp && ramp.live.join().toLowerCase() === exp, JSON.stringify(ramp));
+      // Legend: the Status rows and roma colors, circle swatches (the marker's
       // shape), No record hollow, and no network rows (kit 0.21.0: no network
       // encoding on markers).
       const lg = await page.evaluate(() => ({
@@ -82,7 +98,7 @@ export default {
         legendText: document.getElementById('legend-rows').textContent,
       }));
       const want = JSON.stringify([{ key: 'fresh', shape: 'circle', color: fresh }, { key: 'stale', shape: 'circle', color: stale }]);
-      check(`${tag} legend = kit status-reporting set, circle swatches, No record hollow, no network rows`,
+      check(`${tag} legend = the roma Status colors, circle swatches, No record hollow, no network rows`,
         JSON.stringify(lg.rows.slice(0, 2)) === want && lg.rows[2]?.key === 'null' && lg.rows[2]?.shape === 'hollow'
           && lg.net === 0 && !/HydroMet|AgriMet/.test(lg.legendText), JSON.stringify(lg));
       const q = await page.evaluate(() => location.search);
@@ -98,23 +114,21 @@ export default {
       const [fresh] = await setColors(page, 'status-reporting');
       const [n] = await colorPixels(page, [fresh]);
       check(`${tag} dark basemap: station dots painted in ${fresh} (${n}px)`, n > 150);
-      // Theme flip restyles the map; dots must come back after style.load, in
-      // the new theme's set color.
+      // Theme flip restyles the map; dots must come back after style.load.
       await page.click('#btn-theme');
       await page.waitForTimeout(3500);
-      const [fresh2] = await setColors(page, 'status-reporting');
-      const [n2] = await colorPixels(page, [fresh2]);
-      check(`${tag} dots repainted after a theme flip in ${fresh2} (${n2}px)`, n2 > 150 && fresh2 !== fresh);
+      const [n2] = await colorPixels(page, [fresh]);
+      check(`${tag} dots repainted after a theme flip in ${fresh} (${n2}px)`, n2 > 150);
       await close();
     }
     {
-      // Time since: the kit status-age set's five bins, in legend order.
+      // Time since: the five roma bins, in legend order.
       const { page, close } = await open('?mode=timesince&theme=light');
       const r = await page.evaluate(() => ({
         sw: [...document.querySelectorAll('#legend-rows .mco-legend-row .mco-legend-swatch')].map((s) => s.style.getPropertyValue('--swatch').trim()),
-        want: MCO.palette.categorySet('status-age', 'light').map((c) => c.color),
+        want: MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true }),
       }));
-      check(`${tag} Time since legend = kit status-age set`, JSON.stringify(r.sw.slice(0, 5)) === JSON.stringify(r.want), JSON.stringify(r));
+      check(`${tag} Time since legend = the five roma bins`, JSON.stringify(r.sw.slice(0, 5)) === JSON.stringify(r.want), JSON.stringify(r));
       await close();
     }
     {

@@ -49,16 +49,42 @@
   // Reservation name labels switch on at this zoom (less cluttered at MT extent)
   const TRIBAL_LABEL_MINZOOM    = 7;
 
-  // Category colors are the kit's named sets (MCO.palette.categorySet, kit
-  // 0.21.0; HOUSE-STYLE §6): status-reporting (Status), status-age (Time
-  // since) and status-health (Health). They stay off the orange/brown band
-  // the tribal-lands fill owns; green is the fresh end and rose the stale end
-  // in every mode, and the age ramp is lightness-monotonic, so it survives
-  // grayscale. The sets are per theme, so they are read at paint time (every
-  // paint is rebuilt on a theme switch's style.load), never cached.
+  // ── Role registry: the app's category colors (HOUSE-STYLE §6) ──────────
+  // Status ramp = kit roma, option B (Kyle, 2026-10-10; kept 2026-11-04
+  // over the kit 0.21.0 category sets, which 0.21.1 deprecates). Crameri roma
+  // (MCO.palette, diverging, midpoint 0.5) sampled at five evenly spaced
+  // points from 0.1 to 0.9, reversed so fresh = the blue end and stale = the
+  // brown end: MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse:
+  // true}). The 0.1 and 0.9 ends keep the extremes vivid, and their lightness
+  // differs enough to survive grayscale. Health reuses bins 0, 2 and 4 so the
+  // modes agree on "good" and "bad". One value per theme (the same in all
+  // three today); verify.config.mjs checks the registry against the sample
+  // and the --status-* literals in index.html. Data-encoding (§6).
+  const ROMA_BINS = ['#1e5fac', '#4bb2ce', '#c0eac3', '#c1a545', '#984e14'];
+  const ROLE_SETS = {
+    'status-reporting': [
+      { key: 'fresh', label: 'Reported < 2 h ago', color: ROMA_BINS[0] },
+      { key: 'stale', label: 'Stale (≥ 2 h)',      color: ROMA_BINS[4] },
+    ],
+    'status-age': ['< 2 h', '2–3 h', '3–6 h', '6–24 h', '> 24 h']
+      .map((label, i) => ({ key: String(i), label, color: ROMA_BINS[i] })),
+    'status-health': [
+      { key: 'operational', label: 'Operational',             color: ROMA_BINS[0] },
+      { key: 'partial',     label: 'Partial — sensor outage', color: ROMA_BINS[2] },
+      { key: 'outage',      label: 'Total outage',            color: ROMA_BINS[4] },
+    ],
+  };
+  const ROLES = { dark: ROLE_SETS, light: ROLE_SETS, 'high-contrast': ROLE_SETS };
   const SET_FOR_MODE = { status: 'status-reporting', timesince: 'status-age', health: 'status-health' };
-  const catSet = (name) => MCO.palette.categorySet(name, MCO.getTheme());
-  const catColor = (name, key) => (catSet(name).find((c) => c.key === key) || {}).color;
+  // A fresh copy of a set's rows for the current theme, in legend order.
+  const catSet = (name) => (ROLES[MCO.getTheme()] || ROLES.dark)[name].map((r) => ({ ...r }));
+  // The sheet's pills read these (index.html .pop-pill.*).
+  {
+    const root = document.documentElement.style;
+    root.setProperty('--status-fresh', ROMA_BINS[0]);
+    root.setProperty('--status-partial', ROMA_BINS[2]);
+    root.setProperty('--status-stale', ROMA_BINS[4]);
+  }
   // Time-since bins: the upper bound in minutes of status-age's keys '0'..'4'
   // (its labels run '< 2 h' … '> 24 h'). Bin 0 is the Status/Health cutoff,
   // so stale means ≥ 2 h in every mode.
@@ -69,7 +95,7 @@
   }
 
   // Health mode classes, in status-health's order (operational, partial,
-  // outage); the colors come from the set.
+  // outage); the colors come from the role registry.
   const HEALTH_CLASSES = [
     { key: 'operational', label: 'Operational',              short: 'operational'  },
     { key: 'partial',     label: 'Partial — sensor outage',  short: 'partial'      },
@@ -485,7 +511,7 @@
   function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
 
   // ── Paint expression generators ──────────────────────────────────────────
-  // The mode's category color, from its kit set (read now: per theme).
+  // The mode's category color, from the role registry (read now: per theme).
   // "No record" is not in the sets: it is drawn hollow (stationPaint).
   const CLEAR = 'rgba(0,0,0,0)';
   function paintColorForMode(mode) {
@@ -1189,12 +1215,8 @@
     if (text != null) e.textContent = text;
     return e;
   }
-  // A category pill: the label in words, the category's set color as its dot.
-  function pill(cls, label, color) {
-    const p = el('span', `pop-pill ${cls}`, label);
-    if (color) p.style.setProperty('--pill', color);
-    return p;
-  }
+  // A category pill: the label in words on the category's color (index.html).
+  const pill = (cls, label) => el('span', `pop-pill ${cls}`, label);
   function detailNode(stationId) {
     const s = stationById.get(stationId);
     if (!s) return document.createDocumentFragment();
@@ -1220,14 +1242,14 @@
     // station is already a total outage.
     const tags = el('div', 'pop-tags');
     tags.append(el('span', 'pop-badge', s.sub_network || '—'),
-      pill(status, pillLbl, status === 'null' ? null : catColor('status-reporting', status)));
+      pill(status, pillLbl));
     const hKey = healthKey(stationId, mins);
     const miss = missingElements(stationId);
     if (!(hKey === 'outage' && status === 'null')) {
       const hLbl = hKey === 'partial'
         ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
         : healthClass(hKey).short;
-      tags.append(pill(hKey, hLbl, catColor('status-health', hKey)));
+      tags.append(pill(hKey, hLbl));
     }
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
@@ -1550,7 +1572,7 @@
     legendRowsEl.innerHTML = '';
     // Every row gets a live count + share (refreshLegendCounts); the counts
     // ignore the toggles, so a hidden category still reports its number.
-    // Rows, colors and labels are the mode's kit set; "No record" (drawn
+    // Rows, colors and labels are the mode's registry set; "No record" (drawn
     // hollow) follows it in the modes that have one.
     const rows = catSet(SET_FOR_MODE[activeMode]);
     if (hasNoRecordMode(activeMode)) rows.push({ key: 'null', color: null, label: 'No record' });

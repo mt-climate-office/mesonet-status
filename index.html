@@ -124,9 +124,18 @@
        utilities come from mco-web-style. Data-palette tokens below are
        app-owned (the kit deliberately doesn't own data palettes, §6).
        ════════════════════════════════════════════════════════════════════ */
-    /* Category colors are the kit's named sets (MCO.palette.categorySet,
-       kit 0.21.0: status-reporting, status-health, status-age), read per
-       theme by app.js. No data hex lives in this file. */
+    :root {
+      /* Status ramp = kit roma, option B (Kyle, 2026-10-10; kept 2026-11-04):
+         MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse: true}), set
+         on <html> by app.js at boot from its role registry (the single
+         source). These three are the same samples (bins 0, 2 and 4) as a
+         no-JS fallback for the sheet pills; verify.config.mjs checks they
+         match. Data-encoding (§6). */
+      --status-fresh:   #1e5fac;  /* roma blue (bin 0) */
+      --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" */
+      --status-stale:   #984e14;  /* roma brown (bin 4) */
+      --status-null:    #9aa3b3;
+    }
 
     /* ── App frame (layout only — fonts/colors come from the kit) ─────────── */
     body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
@@ -231,21 +240,21 @@
       font-family: var(--font-mono); font-size: 0.72rem;
       color: var(--text-secondary);
     }
-    /* A category pill: chrome tokens for the text (--text-primary on
-       --bg-raised), and the category's color as a dot like the map's marker
-       (app.js sets --pill from the kit set). No record is the hollow dot. */
     .pop-pill {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 0.66rem; font-weight: 600;
+      display: inline-block; font-size: 0.66rem; font-weight: 600;
       padding: 2px 7px; border-radius: 999px; margin-left: 6px;
-      background: var(--bg-raised); color: var(--text-primary);
-      border: 1px solid var(--border);
     }
-    .pop-pill::before {
-      content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-      background: var(--pill, transparent);
-    }
-    .pop-pill.null::before { background: transparent; border: 1.5px solid var(--dot-stroke); width: 5px; height: 5px; }
+    /* Pill text over the data-palette colors (not tokens — data, not chrome).
+       Measured (WCAG 1.4.3, 4.5:1 at bold 0.66rem): white on the roma blue
+       6.39:1; white on the roma brown 6.11:1; #1a1a2e on the grey 6.71:1. */
+    .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
+    .pop-pill.stale { background: var(--status-stale); color: #fff; }
+    .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
+    /* Health pills reuse the same three data colors. #1a1a2e on the pale
+       roma middle: 12.83:1. */
+    .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
+    .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
+    .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
     .pop-siblings { margin-top: 10px; }
     .pop-siblings h3 {
       margin: 0 0 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);

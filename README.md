@@ -12,7 +12,7 @@ Shows the current reporting state of every station across the HydroMet and AgriM
 
 In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
 
-Colors are the house palette's named category sets (`MCO.palette.categorySet`, mco-web-style 0.21.0): `status-reporting` (Status), `status-age` (Time since) and `status-health` (Health), per theme. Green is the fresh end and rose the stale end in every mode; the age ramp is lightness-monotonic, so it survives grayscale, and every color clears 3:1 on both basemaps and stays off the orange/brown band the tribal-lands fill owns. A station with no record is a hollow dot. Every legend row names its category, so color is never the only channel.
+Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale, held in app.js's role registry. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale. A station with no record is a hollow dot.
 
 Other features:
 
