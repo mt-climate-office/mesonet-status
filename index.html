@@ -34,9 +34,9 @@
        decided 2026-10-08) so they version with the kit and can't drift; the
        navbar logo stays vendored (assets/mco-logo.png). img-src allows
        cdn.jsdelivr.net for these. -->
-  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/assets/apple-touch-icon.png">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
        og-card.png is this app's OWN card — a live screenshot regenerated
@@ -95,8 +95,8 @@
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
        (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
        entry + shared chunk and must precede any module load. Copied byte for
@@ -114,8 +114,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/theme/mco-theme.css"
-        integrity="sha384-R5H+mIUe48yOTRQovin+qNSVBmsBzAEBvwcntc2pK76coeVYeXRYI0/rKAtFcHCo"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/theme/mco-theme.css"
+        integrity="sha384-5AYcUgLLXlsD3HOobKS/jj+F5/NGNGtLFcidyU/qaiRWYN3AwClJa42Y4KaZXajf"
         crossorigin="anonymous">
 
   <style>
@@ -288,21 +288,11 @@
        220px search, so at ≤1400px the mode group becomes a <select>
        (MCO.initSegmentedFallback, mq 1400), the search narrows to 180px, and
        the kit drops the stamp's word ("● 9:40 PM MST", kit 0.21.0). On a
-       phone the bar is the kit's one-row compact drawer (data-rail="compact"). */
+       phone, and wherever the full bar would wrap (kit 0.21.1), the bar is the
+       kit's one-row compact drawer (data-rail="compact"). */
     @media (max-width: 1400px) {
       /* kit-override: 180px, not 220, at the 1400 rung (see above). */
       .mco-search-input { width: 180px; }
-    }
-    /* kit-override: the tablet bar (above compact, ≤ 1060px) can't hold one
-       row, so the primary controls take the second row while row 1 keeps the
-       brand left and the stamp, labels, theme and info right. CSS `order`
-       swaps the visual position without disturbing tab order. Not on
-       compact: there the bar is the kit's one-row drawer and these groups
-       stack inside it. */
-    @media (min-width: 641px) and (max-width: 1060px) and (min-height: 561px) {
-      /* kit-override: row 1 (above). */
-      .mco-navbar .nav-meta  { order: 1; }
-      .mco-navbar .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
     /* The mode <select>: the segmented buttons' fallback at ≤1400px, and the
        phone bar's hot control (#rail-mode-select). One bar height
@@ -545,16 +535,16 @@
 
 <!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
      app.js waits on MCO.map.loadMapLibre(). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/core/mco-core.js"
-        integrity="sha384-eHbZuRPKBgG8dW2fo3mGSf4H0gDV8mo7YIoQlNFtOicFiWzfB8AO4NLaZveI2hWZ"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/core/mco-core.js"
+        integrity="sha384-IVSuG2tnzj62YG4bFD5PxINjGy6kxD7pIoNKV6D4mK97+1D9Edp0dwFcVcXCxsJR"
         crossorigin="anonymous"></script>
 <!-- mco-palette.js before mco-map.js: this app colors station markers, and
      MCO.map.markerPaint() reads MCO.palette (kit 0.9.0). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/palette/mco-palette.js"
-        integrity="sha384-vi2tfgrZ1rb4Rbw9tazqVh2UrJrga0y/cy921MkvQA8L7Dt/DRSe6EnkEMmaRxTJ"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/palette/mco-palette.js"
+        integrity="sha384-bMyfpU5iEKAQiHDJZLqmCMt3sTGm+HBi2GIY7I9xLyV+JYrbGgHOX9+/XVXy8CYV"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.0/map/mco-map.js"
-        integrity="sha384-32oDenYn7xmAVuf3lcodOgiHz/W1DHO4qI7kdVkAHo/JJjZc0Kw6AlCyZm2Re7NU"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.1/map/mco-map.js"
+        integrity="sha384-8ZLN6Xhnts1kIMbDa9M+H05sYgu770WLohBOrch1nTafMd+HEM7PlrP0e4fCoRb8"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
 </body>
