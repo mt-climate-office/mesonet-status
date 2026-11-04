@@ -8,25 +8,28 @@ Shows the current reporting state of every station across the HydroMet and AgriM
 
 - **Status** — single threshold: dot color reflects whether the station has posted within the last 2 hours.
 - **Time since** — five bins of "minutes since the latest record," ceiling at >24 h.
-- **Health** — three classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial**: reported within the 2 hours, but one or more expected sensors are null in the latest record (the popup lists them). **Total outage**: no report in the last 2 hours, or no record at all.
+- **Health** — three classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial**: reported within the 2 hours, but one or more expected sensors are null in the latest record (the station details list them). **Total outage**: no report in the last 2 hours, or no record at all.
 
 In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational).
 
-Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`, mco-web-style 0.12.0), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale.
+Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale, held in app.js's role registry. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale. A station with no record is a hollow dot.
 
 Other features:
 
 - **HydroMet / AgriMet** sub-network toggles with live counts. Hiding a network dynamically resolves any stacked sites at that location to single dots.
 - **Search box** with a custom themed dropdown (8 results, scored by relevance), keyboard navigation (`↑` `↓` `Enter`), and a `/` global shortcut to jump to it from anywhere on the page.
 - **Plotly-style interactive legend** in the lower-left: click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. Every row shows the live count and share of the selected networks' stations in that category (label, count, percentage); hiding a category never changes its count.
-- **Co-located sites** — the HydroMet station is always the visible anchor with a count badge. Hover (desktop) or tap (mobile) to fan the others out; a second click on a foot opens that station's popup.
+- **Station markers** — one circle for every station (`MCO.map.stationPaint`); HydroMet and AgriMet draw the same, and the network chips show or hide each network.
+- **Co-located sites** (`MCO.map.colocation`) — one marker with a count badge; the HydroMet station is the anchor. Hover (desktop) or tap (mobile) to fan the others out, then click one for its details. A station's details also list the others at its site.
+- **Station details** open in a sheet (`MCO.initSheet`) at every width: docked at the right on desktop, a bottom sheet on phones. Back closes them.
+- **Phone bar** — one row: logo, mode, search and ☰; everything else is in the drawer ☰ opens.
 - **Toggleable station-ID labels** with collision-based dodging.
 - **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
 - **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
 - **Montana state outline** so the state shape reads as the primary frame.
 - **Dark → light → high-contrast theme** button (high contrast uses the dark basemap) with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
 - **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
-- **First-visit help dialog** auto-opens once so newcomers get the orientation.
+- **First-visit help dialog** auto-opens once (the kit's `intro` option), never over a deep link.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
 
 ## Sharable URLs
@@ -46,7 +49,7 @@ Every piece of UI state is mirrored to the URL via `history.replaceState`. The v
 | `labels`  | `on` \| `off`                             | Station-ID labels                             |
 | `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
 | `theme`   | `light` \| `dark` \| `high-contrast`       | Theme override. Omitted when it matches the OS preference. |
-| `station` | station id (e.g. `aceabsar`)              | Open this station's popup on load; deep-link  |
+| `station` | station id (e.g. `aceabsar`)              | Open this station's details on load; deep-link |
 
 Precedence per setting: URL param > `localStorage` > built-in default.
 
@@ -101,7 +104,7 @@ Published via [GitHub Pages](https://pages.github.com) from the `main` branch. T
 
 `.github/workflows/preview.yml` runs nightly (and on manual dispatch) and **commits `assets/og-card.png` back to `main`** — always pull/rebase before pushing, or you race it.
 
-`scripts/generate_preview.py` screenshots the live Pages site at 2400×1260 (a 1200×630 viewport at 2×) with `?mode=status`, which pins the Status view and, as a deep link, keeps the first-visit help dialog closed. It waits for the `#refresh-stamp` text to read `refreshed …` and then 4 seconds for tiles to paint — that param, element id and stamp text are a contract with the script. Run it locally to check:
+`scripts/generate_preview.py` screenshots the live Pages site at 2400×1260 (a 1200×630 viewport at 2×) with `?mode=status`, which pins the Status view and, as a deep link, keeps the first-visit help dialog closed. It waits for the `#refresh-stamp` text to read `Updated …` and then 4 seconds for tiles to paint — that param, element id and stamp text are a contract with the script. Run it locally to check:
 
 ```sh
 pip install playwright

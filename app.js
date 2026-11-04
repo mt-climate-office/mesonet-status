@@ -42,64 +42,66 @@
   const ELEMENTS_PERSIST_EVERY    = 40;      // completions between cache writes
   const HEALTH_REFRESH_DEBOUNCE_MS = 500;    // coalesce rebuilds while lists stream in
 
-  // Spider geometry / interaction
-  const SPIDER_RADIUS_PX        = 26;     // distance from anchor to spider foot
-  const SPIDER_CLOSE_GRACE_MS   = 250;    // hover gap when cursor leaves one of the spider layers
   const SEARCH_FLY_ZOOM         = 11;     // zoom when search/deep-link flies to a station
   const SEARCH_FLY_SPEED        = 1.4;
   // Label collision detection switches on at this zoom
   const LABEL_MINZOOM           = 6;
   // Reservation name labels switch on at this zoom (less cluttered at MT extent)
   const TRIBAL_LABEL_MINZOOM    = 7;
-  // Coordinate precision for the co-location bucket key (~11 m at MT latitudes)
-  const BUCKET_PRECISION        = 4;
 
-  // Status ramp = kit roma, option B (Kyle, 2026-10-10). Crameri roma
-  // (MCO.palette, kit 0.12.0, diverging, midpoint 0.5) sampled at five evenly
-  // spaced points from 0.1 to 0.9, reversed so fresh = the blue end and
-  // stale = the brown end: #1e5fac #4bb2ce #c0eac3 #c1a545 #984e14. The 0.1
-  // and 0.9 ends keep the extremes vivid, and their lightness differs enough
-  // to survive grayscale (HOUSE-STYLE §6). SINGLE SOURCE: the bins, the map
-  // paint, the legend swatches, the Status/Health colors, and the --status-*
-  // tokens the popup pills read (set below, so CSS and the map can't drift).
-  const ROMA_BINS = MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true });
-  const TIME_BINS = [
-    { max: FRESH_MINUTES, color: ROMA_BINS[0], label: '< 2 h'  },   // same cutoff as Status/Health
-    { max:  180, color: ROMA_BINS[1], label: '2–3 h'  },
-    { max:  360, color: ROMA_BINS[2], label: '3–6 h'  },
-    { max: 1440, color: ROMA_BINS[3], label: '6–24 h' },
-    { max: Infinity, color: ROMA_BINS[4], label: '> 24 h' },
-  ];
+  // ── Role registry: the app's category colors (HOUSE-STYLE §6) ──────────
+  // Status ramp = kit roma, option B (Kyle, 2026-10-10; kept 2026-11-04
+  // over the kit 0.21.0 category sets, which 0.21.1 deprecates). Crameri roma
+  // (MCO.palette, diverging, midpoint 0.5) sampled at five evenly spaced
+  // points from 0.1 to 0.9, reversed so fresh = the blue end and stale = the
+  // brown end: MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse:
+  // true}). The 0.1 and 0.9 ends keep the extremes vivid, and their lightness
+  // differs enough to survive grayscale. Health reuses bins 0, 2 and 4 so the
+  // modes agree on "good" and "bad". One value per theme (the same in all
+  // three today); verify.config.mjs checks the registry against the sample
+  // and the --status-* literals in index.html. Data-encoding (§6).
+  const ROMA_BINS = ['#1e5fac', '#4bb2ce', '#c0eac3', '#c1a545', '#984e14'];
+  const ROLE_SETS = {
+    'status-reporting': [
+      { key: 'fresh', label: 'Reported < 2 h ago', color: ROMA_BINS[0] },
+      { key: 'stale', label: 'Stale (≥ 2 h)',      color: ROMA_BINS[4] },
+    ],
+    'status-age': ['< 2 h', '2–3 h', '3–6 h', '6–24 h', '> 24 h']
+      .map((label, i) => ({ key: String(i), label, color: ROMA_BINS[i] })),
+    'status-health': [
+      { key: 'operational', label: 'Operational',             color: ROMA_BINS[0] },
+      { key: 'partial',     label: 'Partial — sensor outage', color: ROMA_BINS[2] },
+      { key: 'outage',      label: 'Total outage',            color: ROMA_BINS[4] },
+    ],
+  };
+  const ROLES = { dark: ROLE_SETS, light: ROLE_SETS, 'high-contrast': ROLE_SETS };
+  const SET_FOR_MODE = { status: 'status-reporting', timesince: 'status-age', health: 'status-health' };
+  // A fresh copy of a set's rows for the current theme, in legend order.
+  const catSet = (name) => (ROLES[MCO.getTheme()] || ROLES.dark)[name].map((r) => ({ ...r }));
+  // The sheet's pills read these (index.html .pop-pill.*).
+  {
+    const root = document.documentElement.style;
+    root.setProperty('--status-fresh', ROMA_BINS[0]);
+    root.setProperty('--status-partial', ROMA_BINS[2]);
+    root.setProperty('--status-stale', ROMA_BINS[4]);
+  }
+  // Time-since bins: the upper bound in minutes of status-age's keys '0'..'4'
+  // (its labels run '< 2 h' … '> 24 h'). Bin 0 is the Status/Health cutoff,
+  // so stale means ≥ 2 h in every mode.
+  const TIME_BIN_MAX = [FRESH_MINUTES, 180, 360, 1440, Infinity];
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
-  // Fresh / partial / stale are bins 0, 2 and 4. index.html carries the same
-  // three hexes as a no-JS fallback; verify.config.mjs checks they match.
-  const STATUS_FRESH   = ROMA_BINS[0];
-  const STATUS_PARTIAL = ROMA_BINS[2];
-  const STATUS_STALE   = ROMA_BINS[4];
-  const NULL_COLOR     = cssVar('--status-null', '#9aa3b3');
-  {
-    const root = document.documentElement.style;
-    root.setProperty('--status-fresh', STATUS_FRESH);
-    root.setProperty('--status-partial', STATUS_PARTIAL);
-    root.setProperty('--status-stale', STATUS_STALE);
-  }
 
-  // Health mode classes. Operational/outage reuse the Status colors so the two
-  // modes agree on "good" and "bad"; partial is the ramp's pale middle (bin 2),
-  // much lighter than both ends, so the three classes survive grayscale
-  // (HOUSE-STYLE §6).
+  // Health mode classes, in status-health's order (operational, partial,
+  // outage); the colors come from the role registry.
   const HEALTH_CLASSES = [
-    { key: 'operational', color: STATUS_FRESH,   label: 'Operational',              short: 'operational'  },
-    { key: 'partial',     color: STATUS_PARTIAL, label: 'Partial — sensor outage',  short: 'partial'      },
-    { key: 'outage',      color: STATUS_STALE,   label: 'Total outage',             short: 'total outage' },
+    { key: 'operational', label: 'Operational',              short: 'operational'  },
+    { key: 'partial',     label: 'Partial — sensor outage',  short: 'partial'      },
+    { key: 'outage',      label: 'Total outage',             short: 'total outage' },
   ];
   const healthClass = (key) => HEALTH_CLASSES.find(c => c.key === key) || HEALTH_CLASSES[2];
-
-  const bucketKey = (lat, lon) =>
-    `${lat.toFixed(BUCKET_PRECISION)},${lon.toFixed(BUCKET_PRECISION)}`;
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const refreshStampEl  = document.getElementById('refresh-stamp');
@@ -123,29 +125,22 @@
     MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
   }
 
-  // The --dot-stroke token, for the spider's connector lines (the markers'
-  // own edges come from MCO.map.markerPaint). MapLibre paints can't read CSS
-  // vars, so resolve here.
-  function dotStrokeColor() {
-    return cssVar('--dot-stroke', document.documentElement.dataset.theme !== 'light' ? '#ffffff' : '#2a2a3a');
-  }
-
   // ── Info modal ───────────────────────────────────────────────────────────
+  // The first-visit intro is the kit's (initInfoModal intro, 0.21.0): once
+  // per key, never over a deep link (someone following a shared ?station=
+  // URL shouldn't land behind a help dialog), never once focus has left
+  // <body>, the seen flag written as it opens. Deferred to after the first
+  // data load (loadAll), so it never lands mid-boot. The key predates the
+  // kit option and is kept, so returning visitors don't see it again.
   const btnInfo = document.getElementById('btn-info');
-  MCO.initInfoModal({ dialog: infoModal, trigger: btnInfo });
-  // First-visit auto-open — suppressed over deep links (someone following a
-  // shared ?station= URL shouldn't land behind a help dialog), and the seen
-  // flag is written at open time so an unclosed dialog still counts as seen.
   const urlParams = MCO.urlParams();
   const DEEP_LINK_PARAMS = ['station', 'mode', 'net', 'scat', 'tcat', 'hcat', 'lng'];
   const hasDeepLink = DEEP_LINK_PARAMS.some((k) => urlParams.has(k));
-  if (!MCO.lsGet('mco-status-seen-intro') && !hasDeepLink) {
-    // Defer one tick so the page is rendered before the dialog steals focus.
-    setTimeout(() => {
-      if (!infoModal.open) infoModal.showModal();
-      MCO.lsSet('mco-status-seen-intro', '1');
-    }, 350);
-  }
+  const infoDialog = MCO.initInfoModal({
+    dialog: infoModal, trigger: btnInfo,
+    intro: { key: 'mco-status-seen-intro', skip: hasDeepLink, defer: true },
+  });
+  document.getElementById('info-credit').textContent = MCO.credit({ source: 'Montana Mesonet' });
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   // Absolute stamps are Mountain Time (house convention: every MCO product
@@ -199,12 +194,13 @@
     if (minSince == null || minSince >= FRESH_MINUTES) return 'outage';
     return elementsById.has(stationId) && missingElements(stationId).length ? 'partial' : 'operational';
   }
-  // Discrete bin index for time-since mode: '0'..'4' for TIME_BINS, or 'null'.
-  // Strings, so the same value type covers both modes in URL params + filters.
+  // Discrete bin index for time-since mode: '0'..'4' (status-age's keys), or
+  // 'null'. Strings, so the same value type covers both modes in URL params +
+  // filters.
   function timeBinKey(minSince) {
     if (minSince == null) return 'null';
     let i = 0;
-    while (i < TIME_BINS.length - 1 && minSince >= TIME_BINS[i].max) i++;
+    while (i < TIME_BIN_MAX.length - 1 && minSince >= TIME_BIN_MAX[i]) i++;
     return String(i);
   }
 
@@ -223,15 +219,9 @@
   // Wide keys are the union across stations, so one record's keys suffice;
   // rebuilt per /latest/ payload so the 30 s tick never scans strings.
   let _wideKeyByLabel = new Map();
-  let bucketById  = new Map();                // station id → bucket key
-  // Dynamic colocation indices — recomputed every rebuildSource() based on
-  // the currently-visible sub-networks. Hidden-network stations are excluded.
-  let bucketSize    = new Map();              // bucket key → visible count
-  let bucketIndex   = new Map();              // station id → index within visible members (0..n-1)
-  let bucketAnchor  = new Map();              // bucket key → visible anchor station id
-  let bucketMembers = new Map();              // bucket key → [station metadata in display order]
-  let _spiderBucket = null;                   // bucket key currently spidered, or null
-  let _popup = null;
+  // Colocated sites: one marker with a count badge and a spider
+  // (MCO.map.colocation, kit 0.21.0), created with the map in initMap.
+  let coloc = null;
   let _mapReady = false;
   // Cached static overlay FeatureCollections — fetched once, reused across
   // every setStyle() (the source is re-added but data stays in memory).
@@ -343,7 +333,7 @@
       return;
     }
     MCO.map.addNavigation(map);                                     // top-right, no compass
-    MCO.map.addFitControl(map, { onBeforeFit: () => closeSpider() });
+    MCO.map.addFitControl(map, { onBeforeFit: () => coloc && coloc.close() });
     zoomFloor = MCO.map.installZoomFloor(map);                      // snapback + resize refit
     // The legend clears the attribution (index.html #legend): publish the
     // bottom-right control box's height, re-measured whenever it wraps,
@@ -354,8 +344,25 @@
     // does load, so the overlays and dots still draw on style.load) with a
     // Retry notice (kit 0.8.0). styleUrl is read at retry time (theme).
     MCO.map.watchBasemap(map, { styleUrl: MCO.map.cartoStyleUrl });
+    // Colocated sites (kit 0.21.0): stations whose lat/lon agree to 4
+    // decimals are one marker, the best-ranked visible member (HydroMet
+    // first), with a count badge; hover (or a first tap) fans the rest out
+    // around it, with a 250 ms grace to reach a foot. The kit owns the
+    // grouping, the spider sources and the hover / click / Esc behavior;
+    // this app keeps its source, properties, paints and sheet. Hidden
+    // networks are left out of the source, so hiding one turns a pair into
+    // a plain dot.
+    coloc = MCO.map.colocation(map, {
+      source: 'stations',
+      rank: (s) => netRank(s.sub_network),
+      visible: isShown,
+      properties: stationProps,
+      anchorLayers: ['stations-hit', 'stations-layer', 'stations-badge', 'stations-badge-disc', 'stations-id-label'],
+      spiderLayers: ['spider-hit', 'spider-layer', 'spider-id-label'],
+      onSelect: (id) => openStation(id, { push: true, opener: map.getCanvas() }),
+      onEmpty: () => closeDetail(),
+    });
     wireMapEvents();
-    wireMapClicks();
     wireMapHover();
   }
   function onMapFail(err) {
@@ -400,12 +407,7 @@
     if (!map.getSource('stations')) {
       map.addSource('stations', { type: 'geojson', data: emptyFC() });
     }
-    if (!map.getSource('spider')) {
-      map.addSource('spider', { type: 'geojson', data: emptyFC() });
-    }
-    if (!map.getSource('spider-lines')) {
-      map.addSource('spider-lines', { type: 'geojson', data: emptyFC() });
-    }
+    coloc.addSources();   // the kit's spider feet + connector lines
     // Static overlay data (counties + reservations + state outline): fetched
     // once on first load, then reused across setStyle() so theme toggle
     // doesn't refetch.
@@ -465,84 +467,30 @@
       });
     }
 
-    if (!map.getLayer('spider-lines-layer')) {
-      map.addLayer({
-        id: 'spider-lines-layer', type: 'line', source: 'spider-lines',
-        paint: {
-          'line-color': ['get', '_strokeColor'],
-          'line-width': 1.2,
-          'line-opacity': 0.65,
-        },
-      });
-    }
-
-    if (!map.getLayer('stations-layer')) {
-      map.addLayer({
-        id: 'stations-layer', type: 'circle', source: 'stations',
-        // Filter is set by applyAllFilters() at the end of this function.
-        paint: stationPaint(),
-      });
-    }
-
-    if (!map.getLayer('stations-fill')) {
-      map.addLayer({
-        id: 'stations-fill', type: 'circle', source: 'stations',
-        paint: stationFillPaint(),
-      });
-    }
-
-    if (!map.getLayer('stations-badge')) {
-      map.addLayer({
-        id: 'stations-badge', type: 'symbol', source: 'stations',
-        layout: {
-          'text-field': ['to-string', ['get', 'colocationCount']],
-          'text-font':  ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          'text-size':  10,
-          'text-offset': [0, -1.05],
-          'text-anchor': 'bottom',
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          // White on a near-black halo: ≈15:1 over any basemap or dot color,
-          // and unchanged on the high-contrast black basemap (WCAG 1.4.11).
-          'text-color': '#ffffff',
-          'text-halo-color': '#1a1a2e',
-          'text-halo-width': 1.2,
-        },
-      });
-    }
-
-    if (!map.getLayer('stations-id-label')) {
-      map.addLayer({
-        id: 'stations-id-label', type: 'symbol', source: 'stations',
-        minzoom: LABEL_MINZOOM,
-        layout: stationLabelLayout(),
-        paint: stationLabelPaint(),
-      });
-    }
-
-    if (!map.getLayer('spider-layer')) {
-      map.addLayer({
-        id: 'spider-layer', type: 'circle', source: 'spider',
-        paint: stationPaint(),
-      });
-    }
-
-    if (!map.getLayer('spider-fill')) {
-      map.addLayer({
-        id: 'spider-fill', type: 'circle', source: 'spider',
-        paint: stationFillPaint(),
-      });
-    }
-
-    if (!map.getLayer('spider-id-label')) {
-      map.addLayer({
-        id: 'spider-id-label', type: 'symbol', source: 'spider',
-        layout: stationLabelLayout(),
-        paint: stationLabelPaint(),
-      });
-    }
+    // Station layers. Every station is one MCO.map.stationPaint circle
+    // (kit 0.21.0: no network encoding); the fill is the mode's category.
+    // Anchors only on the main source (colocation.ANCHOR_ONLY, folded into
+    // the category filter by applyAllFilters); the spider source carries
+    // the fanned-out feet. The *-hit layers are the invisible ≥ 22px tap
+    // targets, the *-selected layers the open station's ring.
+    const A = MCO.map.colocation.ANCHOR_ONLY;
+    const NONE = ['==', ['get', 'station'], ''];
+    const stationLayers = [
+      { id: 'spider-lines-layer', type: 'line', source: coloc.spiderLinesSource,
+        paint: MCO.map.colocation.spiderLinePaint() },
+      { id: 'stations-hit', type: 'circle', source: 'stations', filter: A, paint: MCO.map.hitPaint() },
+      { id: 'stations-layer', type: 'circle', source: 'stations', filter: A, paint: stationPaint() },
+      { id: 'stations-selected', type: 'circle', source: 'stations', filter: NONE, paint: MCO.map.selectionPaint() },
+      ...MCO.map.colocation.badgeLayers({ id: 'stations-badge', source: 'stations' }),
+      { id: 'stations-id-label', type: 'symbol', source: 'stations', filter: A, minzoom: LABEL_MINZOOM,
+        layout: stationLabelLayout(), paint: stationLabelPaint() },
+      { id: 'spider-hit', type: 'circle', source: coloc.spiderSource, paint: MCO.map.hitPaint() },
+      { id: 'spider-layer', type: 'circle', source: coloc.spiderSource, paint: stationPaint() },
+      { id: 'spider-selected', type: 'circle', source: coloc.spiderSource, filter: NONE, paint: MCO.map.selectionPaint() },
+      { id: 'spider-id-label', type: 'symbol', source: coloc.spiderSource,
+        layout: stationLabelLayout(), paint: stationLabelPaint() },
+    ];
+    for (const l of stationLayers) if (!map.getLayer(l.id)) map.addLayer(l);
 
     // Reservation name labels — drawn last so they sit above station dots.
     // Minzoom keeps the map uncluttered at state-extent zoom.
@@ -563,95 +511,53 @@
   function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
 
   // ── Paint expression generators ──────────────────────────────────────────
+  // The mode's category color, from the role registry (read now: per theme).
+  // "No record" is not in the sets: it is drawn hollow (stationPaint).
+  const CLEAR = 'rgba(0,0,0,0)';
   function paintColorForMode(mode) {
-    if (mode === 'status') {
-      return ['case',
-        ['==', ['get', 'minutesSince'], null], NULL_COLOR,
-        ['<',  ['get', 'minutesSince'], FRESH_MINUTES], STATUS_FRESH,
-        STATUS_STALE,
-      ];
-    }
+    const set = catSet(SET_FOR_MODE[mode]);
     if (mode === 'health') {
       // Categorical: healthKey is computed in JS at emit time (it needs the
       // element lists), so no time math in the expression.
-      return ['match', ['get', 'healthKey'],
-        ...HEALTH_CLASSES.flatMap(c => [c.key, c.color]),
-        NULL_COLOR,
+      return ['match', ['get', 'healthKey'], ...set.flatMap(c => [c.key, c.color]), set[set.length - 1].color];
+    }
+    if (mode === 'status') {
+      return ['case',
+        ['==', ['get', 'minutesSince'], null], CLEAR,
+        ['<',  ['get', 'minutesSince'], FRESH_MINUTES], set[0].color,
+        set[1].color,
       ];
     }
     // time-since 5-bin step
     return ['case',
-      ['==', ['get', 'minutesSince'], null], NULL_COLOR,
+      ['==', ['get', 'minutesSince'], null], CLEAR,
       ['step', ['get', 'minutesSince'],
-        TIME_BINS[0].color,                     // < FRESH_MINUTES
-        TIME_BINS[0].max, TIME_BINS[1].color,   // FRESH_MINUTES+
-        TIME_BINS[1].max, TIME_BINS[2].color,   // 180+
-        TIME_BINS[2].max, TIME_BINS[3].color,   // 360+
-        TIME_BINS[3].max, TIME_BINS[4].color,   // 1440+
+        set[0].color,                     // < FRESH_MINUTES
+        TIME_BIN_MAX[0], set[1].color,    // FRESH_MINUTES+
+        TIME_BIN_MAX[1], set[2].color,    // 180+
+        TIME_BIN_MAX[2], set[3].color,    // 360+
+        TIME_BIN_MAX[3], set[4].color,    // 1440+
       ],
     ];
   }
 
-  // Station markers (HOUSE-STYLE §7, kit 0.9.0): network = SHAPE + color,
-  // data value = fill. MCO.map.markerPaint gives HydroMet a filled circle
-  // with the --dot-stroke edge and AgriMet a hollow-style thick ring in the
-  // palette's AgriMet color; `fill` puts this mode's status color inside
-  // both. The network survives grayscale and every CVD type, so a stacked
-  // anchor and its spider feet read as two networks without the chips.
-  //
-  // kit-override: markerPaint's hollow + `fill` puts the fill flush against
-  // the orange ring, and warm roma bins merge with it: the stale brown is
-  // 1.60:1 against the light ring (OKLab ΔE 12), and the 6–24 h gold is ΔE 2.8
-  // from the dark ring under deuteranopia (Machado 2009). So an AgriMet dot is
-  // two circles: the clickable *-layer draws the ring around a --dot-stroke
-  // disc GAP px wider than the dot, and the decorative *-fill layer above it
-  // paints the status fill at the HydroMet radius, leaving the same edge
-  // HydroMet dots get between fill and ring. Hit-testing is unchanged: the
-  // clickable layer still covers the whole marker.
-  //
-  // No record = no fill, in every network: HydroMet keeps only a 2px
-  // --dot-stroke edge (the same edge contrast every dot has, so ≥3:1 on both
-  // basemaps), AgriMet only its ring. A grey fill can't stay clear of a ramp
-  // that runs dark → light → dark: the old #9aa3b3 was 1.04:1 and ΔE 4.2
-  // from the 2–3 h cyan under protanopia, and no neutral from #37373f to
-  // #ebebf3 clears ΔE 15 from all five bins.
-  const STATION_RADIUS = ['interpolate', ['linear'], ['zoom'], 4, 3.5, 7, 5, 10, 7, 14, 9];
-  const AGRI_GAP = 1.2;   // = HydroMet's --dot-stroke width
-  const IS_AGRI = ['==', ['get', 'sub_network'], 'AgriMet'];
-  const STATION_RADIUS_OUTER = ['interpolate', ['linear'], ['zoom'],
-    ...STATION_RADIUS.slice(3).flatMap((v, i) => i % 2 ? [['case', IS_AGRI, v + AGRI_GAP, v]] : [v])];
-  // Health mode has no "no record": a station that never reported is an outage.
+  // Station markers (HOUSE-STYLE §7, kit 0.21.0): no network encoding.
+  // Every station is the kit's one circle, MCO.map.stationPaint, with a
+  // --dot-stroke edge and the mode's category as the fill; HydroMet and
+  // AgriMet draw the same (the network is the chips and the detail text).
+  // No record = no fill: a 2px --dot-stroke ring (the same edge contrast
+  // every dot has, so ≥ 3:1 on both basemaps), as the legend's hollow
+  // swatch shows. Health mode has no "no record": a station that never
+  // reported is an outage.
   const NO_RECORD = ['==', ['get', 'minutesSince'], null];
   const hasNoRecordMode = (mode) => mode !== 'health';
   function stationPaint() {
-    const fill = paintColorForMode(activeMode);
-    const hydro = MCO.map.markerPaint('hydromet', { radius: STATION_RADIUS, fill });
-    const agri  = MCO.map.markerPaint('agrimet',  { radius: STATION_RADIUS, fill });
-    const edge  = hydro['circle-stroke-color'];
-    const color = ['case', IS_AGRI, edge, fill];
-    const width = ['case', IS_AGRI, agri['circle-stroke-width'], hydro['circle-stroke-width']];
-    return {
-      'circle-radius': STATION_RADIUS_OUTER,
-      'circle-color': hasNoRecordMode(activeMode)
-        ? ['case', NO_RECORD, 'rgba(0,0,0,0)', color] : color,
-      'circle-stroke-color': ['case', IS_AGRI, agri['circle-stroke-color'], edge],
-      'circle-stroke-width': hasNoRecordMode(activeMode)
-        ? ['case', ['all', NO_RECORD, ['!', IS_AGRI]], 2, width] : width,
-      'circle-opacity': 0.95,
-    };
+    const hollow = hasNoRecordMode(activeMode);
+    return MCO.map.stationPaint({
+      fill: paintColorForMode(activeMode),
+      strokeWidth: hollow ? ['case', NO_RECORD, 2, 1.2] : 1.2,
+    });
   }
-  // The AgriMet status fill drawn inside the ring (see stationPaint). Never
-  // queried for clicks or hover.
-  function stationFillPaint() {
-    return {
-      'circle-radius': STATION_RADIUS,
-      'circle-color': paintColorForMode(activeMode),
-      'circle-opacity': 0.95,
-    };
-  }
-  // Filter for a *-fill layer: AgriMet stations with a record, plus `base`.
-  const fillFilter = (base) => hasNoRecordMode(activeMode)
-    ? ['all', IS_AGRI, ['!', NO_RECORD], base] : ['all', IS_AGRI, base];
 
   function stationLabelLayout() {
     return {
@@ -719,24 +625,16 @@
 
   function refreshDotColors() {
     if (!map || !map.getLayer('stations-layer')) return;
-    // Mode and theme both feed the marker paint (fill, network ring colors).
+    // Mode and theme both feed the marker paint (the category set is per
+    // theme, the edge is --dot-stroke).
     const paint = stationPaint();
     for (const lid of ['stations-layer', 'spider-layer']) {
       for (const k of ['circle-color', 'circle-stroke-color', 'circle-stroke-width']) {
         map.setPaintProperty(lid, k, paint[k]);
       }
     }
-    const fillPaint = stationFillPaint();
-    for (const lid of ['stations-fill', 'spider-fill']) {
-      if (map.getLayer(lid)) map.setPaintProperty(lid, 'circle-color', fillPaint['circle-color']);
-    }
     refreshLabelPaint();
     refreshOverlayPaints();
-    // Spider connector line color also follows theme
-    if (map.getLayer('spider-lines-layer')) {
-      // _strokeColor is per-feature; refresh source data so the new color is baked in
-      rebuildSpider();
-    }
     renderLegend();
   }
 
@@ -762,12 +660,16 @@
       applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
       // Deep-link from ?station=… in URL. loadAll() is only called from the
-      // map's first style.load, so _mapReady is always true here.
+      // map's first style.load, so _mapReady is always true here. It always
+      // opens the sheet (MCO.map.flyToAndOpen), replacing this entry: the
+      // page's own entry is never history.back()'d off the site.
       if (_initStation && stationById.has(_initStation)) {
-        const s = stationById.get(_initStation);
-        if (_hasInitPos) openPopupFor(_initStation, [s.longitude, s.latitude]);
-        else             flyToAndOpen(_initStation);
+        goTo(_initStation, { keepCamera: _hasInitPos });
       } else {
+        if (_initStation) {
+          _selectedStation = null;
+          MCO.showToast(`No station "${_initStation}"`);
+        }
         // Push initial URL so it's clean even if the user hasn't interacted yet
         writeUrl();
       }
@@ -780,6 +682,9 @@
       MCO.showToast(`Error loading data: ${err.message}`);
       MCO.ready();
     }
+    // The first-visit intro, once the page has settled (kit rules: never
+    // over a deep link, never once the visitor has moved focus).
+    infoDialog.intro();
   }
 
   async function refreshLatest() {
@@ -967,41 +872,38 @@
     _healthRefreshTimer = setTimeout(() => {
       _healthRefreshTimer = null;
       rebuildSource();
-      if (_popup && _selectedStation) _popup.setDOMContent(popupNode(_selectedStation));
       if (_sheetFor) fillSheet(_sheetFor);
     }, HEALTH_REFRESH_DEBOUNCE_MS);
   }
 
+  // The freshness stamp (kit 0.21.0, HOUSE-STYLE §4): "Updated 9:40 PM MST",
+  // with the date when it isn't today in Mountain Time, built by
+  // MCO.formatUpdatedMT into the text span (the kit hides the word visually
+  // at ≤ 1400px; AT still reads it). The time is the DATA's: the newest
+  // record in the store. A record stamped more than 10 min ahead of this
+  // clock is a logger fault, not news, so it doesn't count. No record at all
+  // falls back to the fetch time.
   function refreshStamp() {
-    // Mountain Time like every other stamp (house convention). The word is its
-    // own span so the 1400 rung can hide it visually (index.html): the bar
-    // shows "● 12:21 MT", while the text, AT and the preview generator still
-    // read "refreshed 12:21 MT". The wrapper's title carries it for pointer
-    // users (the umrb map's pattern).
-    const time = `${MCO.hhmmNowMT()} MT`;
-    const word = document.createElement('span');
-    word.className = 'refresh-word';
-    word.textContent = 'refreshed';
-    // The space lives outside the hidden span so a screen reader never runs
-    // "refreshed" into the time; a line's leading space collapses visually.
-    refreshStampEl.replaceChildren(word, ` ${time}`);
-    refreshStampEl.parentElement.title = `Last refreshed: ${time}`;
+    const limit = Date.now() + 10 * 60000;
+    let newest = null;
+    for (const ts of latestById.values()) {
+      if (Number.isFinite(ts) && ts <= limit && (newest == null || ts > newest)) newest = ts;
+    }
+    MCO.formatUpdatedMT(newest ?? Date.now(), { into: refreshStampEl });
   }
 
-  // Network priority for choosing a bucket anchor; tiebreak by station id.
+  // Network priority for choosing a colocated site's anchor (the kit breaks
+  // ties by station id).
   const netRank = (s) => s === 'HydroMet' ? 0 : s === 'AgriMet' ? 1 : 99;
 
-  // Static index: each station's lat/lon-derived bucket key + metadata lookup.
-  // Co-location structure (count, anchor, index) is recomputed dynamically in
-  // rebuildSource() based on the currently-visible sub-networks — so disabling
-  // a network resolves a 2-stack to a single un-badged dot.
+  // Metadata lookup (stations with a location only). Colocation (count,
+  // anchor, index) is the kit's, regrouped on every rebuildSource() over the
+  // visible networks, so disabling a network resolves a pair to a plain dot.
   function indexStations() {
     stationById.clear();
-    bucketById.clear();
     for (const s of stations) {
       if (typeof s.latitude !== 'number' || typeof s.longitude !== 'number') continue;
       stationById.set(s.station, s);
-      bucketById.set(s.station, bucketKey(s.latitude, s.longitude));
     }
     // Initialize sub-network filter set if empty (no URL or localStorage value)
     const allNetworks = new Set(stations.map(s => s.sub_network).filter(Boolean));
@@ -1013,68 +915,37 @@
     }
   }
 
+  // A station is on the map when its network is shown (one with no network
+  // always is). The kit's colocation reads this as `visible`.
+  function isShown(s) { return !s.sub_network || activeNetworks.has(s.sub_network); }
+  // The shown stations: the map's, the table's and the counts' one list.
+  function shownStations() { return stations.filter((s) => stationById.has(s.station) && isShown(s)); }
+  // Feature properties for the stations source and the spider feet (the kit
+  // adds colocationCount / colocationIndex / bucket / colocationId).
+  function stationProps(s) {
+    const ts   = latestById.get(s.station) ?? null;
+    const mins = minutesSince(ts);
+    return {
+      station:      s.station,
+      name:         s.name,
+      sub_network:  s.sub_network,
+      datetime:     ts,
+      minutesSince: mins,
+      staleStatus:  statusBucket(mins),
+      timeBinKey:   timeBinKey(mins),
+      healthKey:    healthKey(s.station, mins),
+      missingCount: missingElements(s.station).length,
+    };
+  }
+
+  // Re-emit the source: the kit regroups the sites over the visible
+  // networks, writes the features and refreshes an open spider (its anchor
+  // or membership may have just changed).
   function rebuildSource() {
-    if (!map || !map.getSource('stations')) return;
-
-    // Group visible-network stations by bucket and (re)compute colocation per
-    // the currently-visible set. This both filters out hidden-network stations
-    // at source-emit time AND re-ranks anchors so a HydroMet hide promotes the
-    // AgriMet station to anchor (or, if alone in its bucket, treats it as a
-    // single non-co-located dot — no badge, no spider).
-    bucketMembers.clear();
-    bucketSize.clear();
-    bucketAnchor.clear();
-    bucketIndex.clear();
-
-    for (const s of stations) {
-      if (!stationById.has(s.station)) continue;             // missing lat/lon, skipped at index time
-      if (s.sub_network && !activeNetworks.has(s.sub_network)) continue;
-      const k = bucketById.get(s.station);
-      let arr = bucketMembers.get(k);
-      if (!arr) { arr = []; bucketMembers.set(k, arr); }
-      arr.push(s);
-    }
-    for (const [k, members] of bucketMembers) {
-      members.sort((a, b) =>
-        netRank(a.sub_network) - netRank(b.sub_network) ||
-        a.station.localeCompare(b.station));
-      bucketSize.set(k, members.length);
-      bucketAnchor.set(k, members[0].station);
-      members.forEach((s, i) => bucketIndex.set(s.station, i));
-    }
-
-    const features = [];
-    for (const [k, members] of bucketMembers) {
-      for (const s of members) {
-        const ts   = latestById.get(s.station) ?? null;
-        const mins = minutesSince(ts);
-        features.push({
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
-          properties: {
-            station:         s.station,
-            name:            s.name,
-            sub_network:     s.sub_network,
-            datetime:        ts,
-            minutesSince:    mins,
-            staleStatus:     statusBucket(mins),
-            timeBinKey:      timeBinKey(mins),
-            healthKey:       healthKey(s.station, mins),
-            missingCount:    missingElements(s.station).length,
-            colocationCount: members.length,
-            colocationIndex: bucketIndex.get(s.station),
-            bucket:          k,
-          },
-        });
-      }
-    }
-    map.getSource('stations').setData({ type: 'FeatureCollection', features });
+    if (!map || !coloc || !map.getSource('stations')) return;
+    coloc.setData(stations.filter((s) => stationById.has(s.station)));
     renderSRTable();
     refreshLegendCounts();
-
-    // If a spider is open, refresh its feet — the bucket's anchor or membership
-    // may have just changed.
-    if (_spiderBucket) rebuildSpider();
   }
 
   // Screen-reader table twin of the WebGL station layer (HOUSE-STYLE §5.2):
@@ -1093,14 +964,14 @@
       { key: 'when', label: 'Last report (Mountain Time)' },
       { key: 'health', label: 'Health' },
       { key: 'missing', label: 'Sensors not reporting' },
+      { key: 'site', label: 'Site' },
       { key: 'county', label: 'County' },
     ],
   });
   // The id is this app's hook (verify.config.mjs render evidence).
   srTwin.element.querySelector('table').id = 'sr-station-table';
   function renderSRTable() {
-    const visible = [...bucketMembers.values()].flat()
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const visible = shownStations().sort((a, b) => a.name.localeCompare(b.name));
     srTwin.render(visible.map((s) => {
       const ts = latestById.get(s.station) ?? null;
       const mins = minutesSince(ts);
@@ -1116,24 +987,27 @@
         missing: miss.length ? miss.map(e => e.label).join(', ')
           : elementsById.has(s.station) ? null
           : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading',
+        // The count badge, as text: the canvas spider is pointer-only.
+        site: (() => {
+          const n = (coloc && coloc.info(s.station) || { count: 1 }).count;
+          return n > 1 ? `${n} stations at this site` : null;
+        })(),
         county: s.county,
       };
-    }));
+    }), { selected: _selectedStation });
   }
 
   // ── Health bookkeeping ───────────────────────────────────────────────────
-  // Counts run over the visible-network stations (bucketMembers), never
+  // Counts run over the visible-network stations (shownStations), never
   // filtered by the legend toggles.
   function countHealth() {
     const counts = { operational: 0, partial: 0, outage: 0, total: 0, unknown: 0 };
-    for (const members of bucketMembers.values()) {
-      for (const s of members) {
-        const mins = minutesSince(latestById.get(s.station) ?? null);
-        const key = healthKey(s.station, mins);
-        counts[key]++;
-        counts.total++;
-        if (key !== 'outage' && !elementsById.has(s.station)) counts.unknown++;
-      }
+    for (const s of shownStations()) {
+      const mins = minutesSince(latestById.get(s.station) ?? null);
+      const key = healthKey(s.station, mins);
+      counts[key]++;
+      counts.total++;
+      if (key !== 'outage' && !elementsById.has(s.station)) counts.unknown++;
     }
     return counts;
   }
@@ -1196,22 +1070,33 @@
   // Only the legend-category visibility filter is applied here. Sub-network
   // filtering happens at source-emit time (see rebuildSource), so hidden-network
   // features aren't even in the source — no layer filter needed.
+  const catFilter = () => ['in', ['get', currentCatKey()], ['literal', [...currentCats()]]];
+  // The open station's --selection-ring (kit selectionPaint): on its anchor
+  // dot, or on its foot while the spider is open.
+  function paintSelection() {
+    if (!map) return;
+    const sel = ['==', ['get', 'station'], _selectedStation || ''];
+    if (map.getLayer('stations-selected')) {
+      map.setFilter('stations-selected', ['all', MCO.map.colocation.ANCHOR_ONLY, catFilter(), sel]);
+    }
+    if (map.getLayer('spider-selected')) map.setFilter('spider-selected', ['all', catFilter(), sel]);
+  }
   function applyAllFilters() {
     if (!map || !map.getLayer('stations-layer')) return;
-    const catMatch    = ['in', ['get', currentCatKey()], ['literal', [...currentCats()]]];
-    const anchorOnly  = ['==', ['get', 'colocationIndex'], 0];
-
-    map.setFilter('stations-layer',  ['all', anchorOnly, catMatch]);
-    map.setFilter('stations-fill',   fillFilter(['all', anchorOnly, catMatch]));
-    map.setFilter('stations-badge',  ['all', anchorOnly, ['>', ['get', 'colocationCount'], 1], catMatch]);
-    if (map.getLayer('stations-id-label')) {
-      map.setFilter('stations-id-label', ['all', anchorOnly, catMatch]);
+    const catMatch = catFilter();
+    const anchorOnly = ['all', MCO.map.colocation.ANCHOR_ONLY, catMatch];
+    for (const lid of ['stations-hit', 'stations-layer', 'stations-id-label']) {
+      if (map.getLayer(lid)) map.setFilter(lid, anchorOnly);
     }
-    map.setFilter('spider-layer', catMatch);
-    map.setFilter('spider-fill', fillFilter(catMatch));
-    if (map.getLayer('spider-id-label')) {
-      map.setFilter('spider-id-label', catMatch);
+    // The badge: stacked anchors only (the kit's filter), in a shown category.
+    const badge = MCO.map.colocation.badgeFilter(catMatch);
+    for (const lid of ['stations-badge', 'stations-badge-disc']) {
+      if (map.getLayer(lid)) map.setFilter(lid, badge);
     }
+    for (const lid of ['spider-hit', 'spider-layer', 'spider-id-label']) {
+      if (map.getLayer(lid)) map.setFilter(lid, catMatch);
+    }
+    paintSelection();
     updateEmptyState();
   }
 
@@ -1228,7 +1113,7 @@
       msg = '<strong>No networks selected.</strong> Click HydroMet or AgriMet to show stations.';
     } else if (currentCats().size === 0) {
       msg = '<strong>All legend categories hidden.</strong> Click a legend row to show stations.';
-    } else if (bucketMembers.size === 0) {
+    } else if (shownStations().length === 0) {
       msg = 'No stations match the current filters.';
     }
     if (msg) {
@@ -1256,70 +1141,73 @@
     onSelect: (id) => selectStation(id),
   });
 
-  // Below 640px the search field collapses into #btn-search-toggle and reopens
-  // as an overlay bar — kit component (MCO.initSearchCollapse). The kit owns
-  // open/close, focus in and out, outside-dismiss and viewport-widening resets;
-  // this app keeps the `/` shortcut, the last Esc step, and where focus goes
-  // after a station is picked.
-  const searchCollapse = MCO.initSearchCollapse({
-    wrap: document.getElementById('search-wrap'),
-    toggle: document.getElementById('btn-search-toggle'),
-    input: searchInput,
-    onClose: () => searchBox.close(),
-  });
-
-  // ── Landscape-phone rail (kit 0.10.0) ─────────────────────────────────────
-  // The drawer beside the rail holds the brand, controls and meta; while it
-  // is open the rest of the page is inert, and Esc / the scrim / the menu
-  // button close it with focus back on the button.
+  // ── Phone bar (kit 0.21.0 compact drawer) + landscape rail (0.10.0) ─────
+  // data-rail="compact": on a portrait phone the bar is one row (badge ·
+  // mode select · search · ☰) and ☰ opens the brand, controls and meta as a
+  // right drawer; on a landscape phone the bar is the 56px rail with the
+  // same drawer beside it. Either way, while the drawer is open the rest of
+  // the page (and the rest of the bar) is inert, and Esc / the scrim / ☰
+  // close it with focus back on the button that opened it. The bar's search
+  // button opens the drawer on the field (the kit's search option).
+  const railSearchBtn = document.getElementById('btn-rail-search');
   const rail = MCO.initNavRail({
     toggle: document.getElementById('btn-rail-menu'),
     drawer: document.getElementById('nav-drawer'),
     scrim: document.getElementById('nav-scrim'),
+    search: { toggle: railSearchBtn, input: searchInput },
   });
-  document.getElementById('btn-rail-search').addEventListener('click', () => rail.open(searchInput));
+  const inDrawer = () => rail.isRail() || rail.isDrawerMode();
   // The info dialog would open under an inert page: close the drawer first
   // (capture, so it runs before the kit's own opener).
   btnInfo.addEventListener('click', () => rail.close({ restoreFocus: false }), true);
 
   function selectStation(stationId) {
-    // Picking from the drawer: close it and let the detail take focus.
+    // Picking from the drawer: close it and let the detail take focus; the
+    // sheet hands focus back to the bar's search button when it closes.
+    const opener = inDrawer() ? railSearchBtn : searchInput;
     if (rail.isOpen()) rail.close({ restoreFocus: false });
-    flyToAndOpen(stationId, { push: true });
-    // Collapsed: close the overlay, which returns focus to the toggle. Blurring
-    // instead would drop focus to <body>, since the field is display:none once
-    // the overlay closes.
-    if (searchCollapse.isCollapsed()) searchCollapse.close();
     else searchInput.blur();
+    goTo(stationId, { push: true, opener });
   }
 
-  // opts.push: a new history entry when this opens a detail (writeUrl).
-  function flyToAndOpen(stationId, opts) {
+  // Search pick, ?station= deep link and Back/Forward all come through here.
+  // MCO.map.flyToAndOpen (kit 0.21.0) re-enables a hidden network first,
+  // opens at once if the station is already in view, and otherwise flies
+  // (jumps under reduced motion) and opens once the map is idle with the
+  // station in view. The old copy opened on the first `moveend`, which a
+  // reduced-motion jump fires before the listener existed, so a deep link
+  // zoomed and opened nothing. opts.push: a new history entry when this
+  // opens a detail (writeUrl); opts.keepCamera: a deep link that names its
+  // own camera, so don't zoom past it.
+  function goTo(stationId, opts) {
     const s = stationById.get(stationId);
     if (!s) { MCO.showToast('Station not found'); return; }
-    if (s.sub_network && !activeNetworks.has(s.sub_network)) {
-      // Re-enable its sub-network so the user can see the dot
-      activeNetworks.add(s.sub_network);
-      MCO.lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
-      for (const chip of subnetFiltersEl.querySelectorAll('.mco-chip')) {
-        if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
-      }
-      rebuildSource();
-      applyAllFilters();
-    }
-    closeSpider();
-    map.flyTo({
+    if (!map) return;
+    if (coloc) coloc.close();
+    MCO.map.flyToAndOpen(map, {
       center: [s.longitude, s.latitude],
-      // Live reduced-motion gate (kit §5.3) — honors mid-session OS changes.
-      zoom: SEARCH_FLY_ZOOM, speed: SEARCH_FLY_SPEED, animate: !MCO.reducedMotion(),
+      zoom: opts && opts.keepCamera ? map.getZoom() : SEARCH_FLY_ZOOM,
+      speed: SEARCH_FLY_SPEED,
+      ensureVisible: () => {
+        if (!s.sub_network || activeNetworks.has(s.sub_network)) return;
+        // Re-enable its sub-network so the user can see the dot.
+        activeNetworks.add(s.sub_network);
+        MCO.lsSet('mco-status-networks', JSON.stringify([...activeNetworks]));
+        for (const chip of subnetFiltersEl.querySelectorAll('.mco-chip')) {
+          if (chip.dataset.network === s.sub_network) chip.setAttribute('aria-pressed', 'true');
+        }
+        rebuildSource();
+        applyAllFilters();
+      },
+      open: () => openStation(stationId, opts),
     });
-    map.once('moveend', () => openPopupFor(stationId, null, opts));
   }
 
-  // ── Popup ────────────────────────────────────────────────────────────────
+  // ── Station detail content ───────────────────────────────────────────────
   // Built with DOM APIs + textContent (HOUSE-STYLE §7): MCO.map.popupContent
-  // (kit 0.8.0) gives the title, subtitle, .mco-facts list and action links;
-  // the network badge, status pills, stamp and missing-sensor list are this
+  // (kit 0.8.0) gives the subtitle, .mco-facts list and action links (the
+  // sheet's own <h2> carries the name); the network badge, category pills,
+  // stamp, missing-sensor list and the other stations at the site are this
   // app's, inserted before the facts. Never setHTML of API strings.
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -1327,8 +1215,9 @@
     if (text != null) e.textContent = text;
     return e;
   }
-  // inSheet: the sheet's own <h2> carries the name, so the content skips it.
-  function popupNode(stationId, inSheet) {
+  // A category pill: the label in words on the category's color (index.html).
+  const pill = (cls, label) => el('span', `pop-pill ${cls}`, label);
+  function detailNode(stationId) {
     const s = stationById.get(stationId);
     if (!s) return document.createDocumentFragment();
     const ts = latestById.get(stationId) ?? null;
@@ -1338,7 +1227,7 @@
     const elev = (typeof s.elevation === 'number') ? `${s.elevation.toFixed(0)} m` : null;
     const installed = (typeof s.date_installed === 'number') ? MCO.formatDateMT(s.date_installed) : null;
     const frag = MCO.map.popupContent({
-      title: inSheet ? null : s.name,
+      title: null,
       subtitle: s.station,
       facts: [['County', s.county], ['Elevation', elev], ['Installed', installed]],
       actions: [
@@ -1352,14 +1241,15 @@
     // Badge + pills. Health pill only when it adds something: a "no data"
     // station is already a total outage.
     const tags = el('div', 'pop-tags');
-    tags.append(el('span', 'pop-badge', s.sub_network || '—'), el('span', `pop-pill ${status}`, pillLbl));
+    tags.append(el('span', 'pop-badge', s.sub_network || '—'),
+      pill(status, pillLbl));
     const hKey = healthKey(stationId, mins);
     const miss = missingElements(stationId);
     if (!(hKey === 'outage' && status === 'null')) {
       const hLbl = hKey === 'partial'
         ? `${miss.length} sensor${miss.length === 1 ? '' : 's'} down`
         : healthClass(hKey).short;
-      tags.append(el('span', `pop-pill ${hKey}`, hLbl));
+      tags.append(pill(hKey, hLbl));
     }
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
@@ -1381,13 +1271,31 @@
           elementsFailed.has(stationId) ? 'Sensor list unavailable' : 'Checking sensors…'), before);
       }
     }
+
+    // The other visible stations at this site (kit colocation): the keyboard
+    // and touch route across a site, since the canvas spider is pointer-only.
+    const sibs = coloc ? coloc.siblings(stationId) : [];
+    if (sibs.length) {
+      const box = el('div', 'pop-siblings');
+      box.append(el('h3', null, 'Also at this site'));
+      const ul = el('ul');
+      for (const m of sibs) {
+        const b = el('button', 'nav-btn', `${m.name} (${m.sub_network || 'station'})`);
+        b.type = 'button';
+        b.addEventListener('click', () => openStation(m.station, { push: false }));
+        const li = el('li');
+        li.append(b);
+        ul.append(li);
+      }
+      box.append(ul);
+      root.insertBefore(box, before);
+    }
     return frag;
   }
 
-  // ── Station detail: bottom sheet on compact (kit 0.9.0) ─────────────────
-  // Below the compact edge an anchored popup covers the very map it points
-  // at; the station opens in MCO.initSheet instead (peek, drag/grip to full),
-  // with the same popupContent body.
+  // ── Station detail: MCO.initSheet at every width (kit 0.21.0) ───────────
+  // End-docked above compact, a bottom sheet (peek, drag/grip to full) on
+  // compact. Stations never open an anchored popup.
   const sheetEl    = document.getElementById('station-sheet');
   const sheetTitle = document.getElementById('station-sheet-title');
   const sheetBody  = sheetEl.querySelector('.mco-sheet-body');
@@ -1395,118 +1303,39 @@
   MCO.metrics.observe('--chrome-h', document.getElementById('navbar'));
   const sheet = MCO.initSheet({
     sheet: sheetEl,
+    fallbackFocus: document.getElementById('main'),
     onState: (state) => {
       // Closed by the user (×, Esc, drag down): clear the selection.
       if (state === 'closed' && _sheetFor) {
         _sheetFor = null;
         _selectedStation = null;
+        paintSelection();
+        renderSRTable();
+        MCO.announce('Station closed.');
         afterDetailClosed();
       }
     },
   });
   function fillSheet(stationId) {
     sheetTitle.textContent = stationById.get(stationId).name;
-    sheetBody.replaceChildren(popupNode(stationId, true));
+    sheetBody.replaceChildren(detailNode(stationId));
   }
 
   // opts.push: open as drill-down — a new history entry when no station was
   // open (HOUSE-STYLE §4), so Back closes it. Switching stations, deep links
-  // and history navigation replace.
-  function openPopupFor(stationId, lngLat, opts) {
+  // and history navigation replace. opts.opener: where focus returns on close.
+  function openStation(stationId, opts) {
     const s = stationById.get(stationId);
     if (!s) return;
     const push = !!(opts && opts.push) && !_selectedStation;
-    if (_popup) { _suppressNextPopupClose = true; _popup.remove(); _popup = null; }
     _selectedStation = stationId;
-    if (MCO.viewport.isCompact()) {
-      _sheetFor = stationId;
-      fillSheet(stationId);
-      sheet.open('peek');
-      announcePopup(stationId);
-      writeUrl({ push });
-      return;
-    }
-    if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
-    const p = new maplibregl.Popup({ closeOnClick: false, maxWidth: '320px', offset: 12 })
-      .setLngLat(lngLat || [s.longitude, s.latitude])
-      .setDOMContent(popupNode(stationId))
-      .addTo(map);
-    p.on('close', () => {
-      if (_suppressNextPopupClose) { _suppressNextPopupClose = false; return; }
-      if (_popup === p) {
-        _popup = null;
-        _selectedStation = null;
-        afterDetailClosed();
-      }
-    });
-    _popup = p;
+    _sheetFor = stationId;
+    fillSheet(stationId);
+    sheet.open('peek', { opener: opts && opts.opener });
+    paintSelection();
+    renderSRTable();
     announcePopup(stationId);
     writeUrl({ push });
-  }
-
-  // ── Spider expand ────────────────────────────────────────────────────────
-  // Argument is the bucket *key* (a string), not the bucketKey() function;
-  // named differently to avoid shadowing the outer helper.
-  function openSpider(key, anchorLngLat) {
-    _spiderBucket = key;
-    rebuildSpider(anchorLngLat);
-  }
-  function closeSpider() {
-    if (_spiderBucket == null || !map) return;
-    _spiderBucket = null;
-    map.getSource('spider')?.setData(emptyFC());
-    map.getSource('spider-lines')?.setData(emptyFC());
-  }
-  function rebuildSpider(anchorLngLatHint) {
-    if (_spiderBucket == null || !map || !map.getSource('spider')) return;
-    // Members come from the dynamic bucketMembers map, which already excludes
-    // hidden-network stations.
-    const members = bucketMembers.get(_spiderBucket) || [];
-    if (members.length <= 1) { closeSpider(); return; }
-
-    const anchorId = bucketAnchor.get(_spiderBucket);
-    const anchorMeta = stationById.get(anchorId);
-    const anchorLngLat = anchorLngLatHint || [anchorMeta.longitude, anchorMeta.latitude];
-    const anchorPx = map.project(anchorLngLat);
-    const others = members.filter(s => s.station !== anchorId).map(s => s.station);
-    const radius = SPIDER_RADIUS_PX;
-    const stroke = dotStrokeColor();
-
-    const feet = [];
-    const lines = [];
-    others.forEach((sid, i) => {
-      const theta = (i / others.length) * 2 * Math.PI - Math.PI / 2;  // start at top
-      const px = { x: anchorPx.x + radius * Math.cos(theta), y: anchorPx.y + radius * Math.sin(theta) };
-      const ll = map.unproject(px);
-      const ts = latestById.get(sid) ?? null;
-      const mins = minutesSince(ts);
-      const s = stationById.get(sid);
-      feet.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [ll.lng, ll.lat] },
-        properties: {
-          station: sid,
-          name: s.name,
-          sub_network: s.sub_network,
-          datetime: ts,
-          minutesSince: mins,
-          staleStatus: statusBucket(mins),
-          timeBinKey:  timeBinKey(mins),
-          healthKey:   healthKey(sid, mins),
-          missingCount: missingElements(sid).length,
-          colocationCount: 1,
-          colocationIndex: 0,
-          bucket: _spiderBucket,
-        },
-      });
-      lines.push({
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [anchorLngLat, [ll.lng, ll.lat]] },
-        properties: { _strokeColor: stroke },
-      });
-    });
-    map.getSource('spider').setData({ type: 'FeatureCollection', features: feet });
-    map.getSource('spider-lines').setData({ type: 'FeatureCollection', features: lines });
   }
 
   // ── Map event wiring (called from initMap) ───────────────────────────────
@@ -1526,16 +1355,9 @@
       loadAll();
     });
 
-    // Reflect every pan/zoom in the URL so the view is sharable
-    map.on('moveend', writeUrl);
-
-    // Keep spider feet anchored at constant pixel offset while the camera moves.
-    // Coalesce multiple per-frame `move` events into a single rebuild via rAF.
-    let _spiderMoveRaf = 0;
-    map.on('move', () => {
-      if (!_spiderBucket || _spiderMoveRaf) return;
-      _spiderMoveRaf = requestAnimationFrame(() => { _spiderMoveRaf = 0; rebuildSpider(); });
-    });
+    // Reflect every pan/zoom in the URL so the view is sharable. (The kit's
+    // colocation keeps an open spider's feet at a constant pixel offset.)
+    map.on('moveend', () => writeUrl());
   }
 
   // ── URL writes ──────────────────────────────────────────────────────────
@@ -1572,20 +1394,16 @@
     else MCO.replaceUrlState(params);
   }
 
-  // Track whether the next Popup `close` event was triggered programmatically
-  // (so we don't writeUrl for an open-replace; the new popup writes its own state).
-  let _suppressNextPopupClose = false;
+  // Close the station sheet from the app (an empty-map click, Back).
   // opts.fromHistory: Back/Forward already moved the URL; just re-sync it.
-  function closePopup(opts) {
-    if (!_popup && !_sheetFor) return;
-    if (_popup) {
-      _suppressNextPopupClose = true;
-      _popup.remove();
-      _popup = null;
-    }
+  function closeDetail(opts) {
+    if (!_sheetFor && !_selectedStation) return;
     if (_sheetFor) { _sheetFor = null; sheet.close({ restoreFocus: false }); }
     if (_selectedStation) {
       _selectedStation = null;
+      paintSelection();
+      renderSRTable();
+      if (opts && opts.fromHistory) MCO.announce('Station closed.');
       afterDetailClosed(opts);
     }
   }
@@ -1603,62 +1421,12 @@
     if (!stations.length) return;
     const st = MCO.getParamLower('station', params);
     if (st === _selectedStation) { if (!hash) writeUrl(); return; }
-    if (!st) closePopup({ fromHistory: true });
-    else if (stationById.has(st)) flyToAndOpen(st);
+    if (!st) closeDetail({ fromHistory: true });
+    else if (stationById.has(st)) goTo(st);
   });
 
-  // ── Spider close grace period (so cursor can travel from anchor to a foot) ─
-  let _spiderCloseTimer = null;
-  function scheduleSpiderClose() {
-    if (_spiderCloseTimer) clearTimeout(_spiderCloseTimer);
-    _spiderCloseTimer = setTimeout(() => { _spiderCloseTimer = null; closeSpider(); }, SPIDER_CLOSE_GRACE_MS);
-  }
-  function cancelSpiderClose() {
-    if (_spiderCloseTimer) { clearTimeout(_spiderCloseTimer); _spiderCloseTimer = null; }
-  }
-
-  // ── Click handling ───────────────────────────────────────────────────────
-  // Single dispatcher so badge + dot at the same point can't double-fire.
-  // For stacked anchors: clicking opens (or toggles) the spider only — popups are
-  // only opened by a second click on one of the spider feet.
-  function wireMapClicks() {
-    map.on('click', (e) => {
-      const feats = map.queryRenderedFeatures(e.point, {
-        layers: ['spider-layer', 'stations-layer', 'stations-badge'].filter(l => map.getLayer(l)),
-      });
-      if (feats.length === 0) {
-        closeSpider();
-        closePopup();
-        return;
-      }
-      const f =
-        feats.find(x => x.layer.id === 'spider-layer') ||
-        feats.find(x => x.layer.id === 'stations-layer') ||
-        feats[0];
-      const props  = f.properties;
-      const lngLat = f.geometry.coordinates.slice();
-      if (f.layer.id === 'spider-layer') {
-        // Second click — open the popup for the chosen station
-        openPopupFor(props.station, lngLat, { push: true });
-        return;
-      }
-      // Click on the anchor (or its badge) of a stacked site → ensure the spider
-      // is open AND open the anchor station's popup. (Hover already opens the spider
-      // on desktop; on mobile this click is the first user gesture.) Dismissal is
-      // via clicking elsewhere or pressing Esc — same as any popup.
-      if (props.colocationCount > 1) {
-        cancelSpiderClose();
-        if (_spiderBucket !== props.bucket) openSpider(props.bucket, lngLat);
-        openPopupFor(props.station, lngLat, { push: true });
-        return;
-      }
-      // Plain (non-co-located) station — close any open spider, open popup directly
-      if (_spiderBucket) closeSpider();
-      openPopupFor(props.station, lngLat, { push: true });
-    });
-  }
-
-  // ── Hover tooltip + hover-open spider for co-located sites ────────────────
+  // ── Hover tooltip ────────────────────────────────────────────────────────
+  // (The colocated sites' hover fan-out is the kit's colocation.)
   // The tooltip is MCO.map.initCursorTooltip (kit 0.8.0): the query, cursor,
   // edge-flipped positioning, textContent fill and mouseout cleanup. The first
   // value line (relative time) is the accent value; the stamp and health
@@ -1671,6 +1439,8 @@
     const miss = healthKey(stationId, minutesSince(ts)) === 'partial' ? missingElements(stationId).length : 0;
     const lines = ts == null ? ['no record'] : [relativeStamp(ts), MCO.formatStampMT(ts)];
     if (miss) lines.push(`${miss} sensor${miss === 1 ? '' : 's'} not reporting`);
+    const n = f.properties.colocationCount;
+    if (n > 1) lines.push(`${n} stations at this site`);
     return { name: s.name, sub: s.station, line: lines };
   }
 
@@ -1680,49 +1450,18 @@
     'stations-layer', 'stations-badge', 'stations-id-label',
     'spider-layer', 'spider-id-label',
   ];
-  const ANCHOR_LAYER_IDS = new Set(['stations-layer', 'stations-badge', 'stations-id-label']);
-  let _hoveredStation = null;
-
   function wireMapHover() {
     MCO.map.initCursorTooltip(map, {
       layers: HOVER_LAYERS,
       element: document.getElementById('tooltip'),
       render: tooltipFor,
     });
-    // Spider: hovering a stacked anchor fans its members out; leaving every
-    // station layer closes it after a grace period (so the cursor can travel
-    // from the anchor to a foot).
-    map.on('mousemove', (e) => {
-      const layers = HOVER_LAYERS.filter(lid => map.getLayer(lid));
-      const f = layers.length ? map.queryRenderedFeatures(e.point, { layers })[0] : null;
-      if (f) {
-        cancelSpiderClose();
-        _hoveredStation = f.properties.station;
-        if (ANCHOR_LAYER_IDS.has(f.layer.id)
-            && f.properties.colocationCount > 1
-            && _spiderBucket !== f.properties.bucket) {
-          openSpider(f.properties.bucket, f.geometry.coordinates.slice());
-        }
-      } else if (_hoveredStation !== null) {
-        scheduleSpiderClose();
-        _hoveredStation = null;
-      }
-    });
-    map.getCanvas().addEventListener('mouseleave', () => {
-      scheduleSpiderClose();
-      _hoveredStation = null;
-    });
   }
 
-  // Global keyboard shortcuts: ESC closes things; / focuses search.
-  // Esc stays live regardless of ?kbd=off — it's not a printable-character
-  // shortcut, so WCAG 2.1.4 doesn't require an opt-out for it.
+  // Global keyboard shortcut: / focuses search. Esc is the kit's (its
+  // escStack unwinds one layer per press: the dialog, the drawer, the
+  // sheet, then the spider) and stays live regardless of ?kbd=off.
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeSpider();
-      closePopup();
-      return;
-    }
     if (!kbdShortcuts) return;
     if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       const t = e.target;
@@ -1730,18 +1469,16 @@
         t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       if (inField) return;
       e.preventDefault();
-      if (rail.isRail()) { rail.open(searchInput); return; }
-      if (searchCollapse.isCollapsed()) { searchCollapse.open(); return; }
+      if (inDrawer()) { rail.open(searchInput, { opener: railSearchBtn }); return; }
       searchInput.focus();
       searchInput.select();
     }
   });
   // Esc in the field: the kit closes the list, then clears the text (and
-  // stops the key there). Once it lets Esc through, close the overlay, then
-  // leave the field.
+  // stops the key there). Once it lets Esc through, the drawer (if the field
+  // is in one) takes it and returns focus; in the desktop bar, leave the field.
   searchInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
-    if (searchCollapse.isOpen()) { searchCollapse.close(); return; }
+    if (e.key !== 'Escape' || e.defaultPrevented || rail.isOpen()) return;
     searchInput.blur();
   });
 
@@ -1752,6 +1489,7 @@
     activeMode = mode;
     MCO.lsSet('mco-status-mode', activeMode);
     modeControl.set(activeMode);
+    railModeSelect.value = activeMode;
     refreshDotColors();
     applyAllFilters();  // category filter belongs to the active mode
     writeUrl();
@@ -1766,6 +1504,10 @@
     onChange: (v) => setMode(v),
   });
   modeControl.set(activeMode);
+  // The phone bar's hot control: the same choice (index.html #rail-mode-select).
+  const railModeSelect = document.getElementById('rail-mode-select');
+  railModeSelect.value = activeMode;
+  railModeSelect.addEventListener('change', () => setMode(railModeSelect.value));
 
   // ── Labels toggle ────────────────────────────────────────────────────────
   let labelsOn = (() => {
@@ -1830,31 +1572,26 @@
     legendRowsEl.innerHTML = '';
     // Every row gets a live count + share (refreshLegendCounts); the counts
     // ignore the toggles, so a hidden category still reports its number.
-    const rows = activeMode === 'status'
-      ? [
-          { key: 'fresh', color: STATUS_FRESH, label: 'Reported < 2 h ago' },
-          { key: 'stale', color: STATUS_STALE, label: 'Stale (≥ 2 h)' },
-          { key: 'null',  color: NULL_COLOR,   label: 'No record' },
-        ]
-      : activeMode === 'health'
-      ? HEALTH_CLASSES.map(c => ({ key: c.key, color: c.color, label: c.label }))
-      : [
-          ...TIME_BINS.map((b, i) => ({ key: String(i), color: b.color, label: b.label })),
-          { key: 'null', color: NULL_COLOR, label: 'No record' },
-        ];
+    // Rows, colors and labels are the mode's registry set; "No record" (drawn
+    // hollow) follows it in the modes that have one.
+    const rows = catSet(SET_FOR_MODE[activeMode]);
+    if (hasNoRecordMode(activeMode)) rows.push({ key: 'null', color: null, label: 'No record' });
     legendTitleEl.textContent = MODES[activeMode].title;
     const rowEls = rows.map((r) => {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'mco-legend-row';
       row.dataset.key = r.key;
+      // The swatch is the marker's shape: a circle in the category color,
+      // and No record the hollow ring stationPaint draws.
       const sw = document.createElement('span');
       sw.className = 'mco-legend-swatch';
-      sw.style.setProperty('--swatch', r.color);
-      // No record is drawn hollow on the map (stationPaint): match it.
       if (r.key === 'null') {
         sw.dataset.shape = 'hollow';
-        sw.style.setProperty('--swatch', cssVar('--dot-stroke', NULL_COLOR));
+        sw.style.setProperty('--swatch', cssVar('--dot-stroke', 'currentColor'));
+      } else {
+        sw.dataset.shape = 'circle';
+        sw.style.setProperty('--swatch', r.color);
       }
       sw.setAttribute('aria-hidden', 'true');
       const lb = document.createElement('span');
@@ -1880,24 +1617,6 @@
         writeUrl();
       },
     });
-    // Network key: the marker shapes (the chips in the navbar toggle them).
-    const key = document.createElement('div');
-    key.className = 'legend-networks';
-    for (const net of ['hydromet', 'agrimet']) {
-      const n = MCO.palette.network(net, document.documentElement.dataset.theme);
-      const item = document.createElement('span');
-      item.className = 'legend-network';
-      const sw = document.createElement('span');
-      sw.className = 'mco-legend-swatch';
-      sw.dataset.shape = n.shape;
-      // The filled circle's network color is its edge, not its fill (the
-      // fill is the data): show it with a neutral fill.
-      sw.style.setProperty('--swatch', n.shape === 'circle' ? NULL_COLOR : n.color);
-      sw.setAttribute('aria-hidden', 'true');
-      item.append(sw, document.createTextNode(n.shape === 'circle' ? `${n.label} (dot)` : `${n.label} (ring)`));
-      key.appendChild(item);
-    }
-    legendRowsEl.appendChild(key);
     const hint = document.createElement('div');
     hint.className = 'legend-hint';
     hint.textContent = 'Click to toggle · Double-click to isolate';
@@ -1912,21 +1631,19 @@
   }
 
   // Per-category counts for the active mode over the visible-network stations
-  // (bucketMembers), NOT filtered by the legend toggles — hiding a
+  // (shownStations), NOT filtered by the legend toggles — hiding a
   // category must not zero its count.
   function legendCounts() {
     const prop = currentCatKey();
     const counts = {};
     let total = 0;
-    for (const members of bucketMembers.values()) {
-      for (const s of members) {
-        const mins = minutesSince(latestById.get(s.station) ?? null);
-        const key = prop === 'staleStatus' ? statusBucket(mins)
-          : prop === 'timeBinKey' ? timeBinKey(mins)
-          : healthKey(s.station, mins);
-        counts[key] = (counts[key] || 0) + 1;
-        total++;
-      }
+    for (const s of shownStations()) {
+      const mins = minutesSince(latestById.get(s.station) ?? null);
+      const key = prop === 'staleStatus' ? statusBucket(mins)
+        : prop === 'timeBinKey' ? timeBinKey(mins)
+        : healthKey(s.station, mins);
+      counts[key] = (counts[key] || 0) + 1;
+      total++;
     }
     return { counts, total };
   }

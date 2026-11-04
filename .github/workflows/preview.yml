@@ -3,7 +3,7 @@ name: Update social preview image
 on:
   schedule:
     # 06:00 UTC = 23:00 MST / 00:00 MDT. The status map is live, so the time
-    # of day only changes the "refreshed" stamp on the card.
+    # of day only changes the "Updated" stamp on the card.
     - cron: "0 6 * * *"
   workflow_dispatch:
 
