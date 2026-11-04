@@ -124,17 +124,9 @@
        utilities come from mco-web-style. Data-palette tokens below are
        app-owned (the kit deliberately doesn't own data palettes, §6).
        ════════════════════════════════════════════════════════════════════ */
-    :root {
-      /* Status ramp = kit roma, option B (Kyle, 2026-10-10):
-         MCO.palette.sample('roma', 5, {from: .1, to: .9, reverse: true}), set
-         on <html> by app.js at boot (the single source). These three are the
-         same samples (bins 0, 2 and 4) as a no-JS fallback for the popup
-         pills; verify.config.mjs checks they match. Data-encoding (§6). */
-      --status-fresh:   #1e5fac;  /* roma blue (bin 0) */
-      --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" */
-      --status-stale:   #984e14;  /* roma brown (bin 4) */
-      --status-null:    #9aa3b3;
-    }
+    /* Category colors are the kit's named sets (MCO.palette.categorySet,
+       kit 0.21.0: status-reporting, status-health, status-age), read per
+       theme by app.js. No data hex lives in this file. */
 
     /* ── App frame (layout only — fonts/colors come from the kit) ─────────── */
     body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
@@ -188,7 +180,7 @@
       pointer-events: none;
       transition: opacity 0.15s;
     }
-    /* Hide the / hint once the user has focused the search (or while typing). */
+    /* kit-override: hide the / hint once the search has focus (or while typing). */
     .mco-search:focus-within .search-kbd { opacity: 0; }
 
     /* Sub-network chips are the kit's .mco-chips / .mco-chip (0.9.0): pressed
@@ -214,12 +206,6 @@
       font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted);
       font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
     }
-    .legend-networks {
-      display: flex; gap: 12px; margin-top: 6px; padding: 4px 4px 0;
-      border-top: 1px solid var(--border);
-      font-size: 0.7rem; color: var(--text-secondary);
-    }
-    .legend-network { display: inline-flex; align-items: center; gap: 6px; }
     .legend-hint, .legend-note {
       margin-top: 6px; padding: 0 4px;
       font-size: 0.62rem; font-style: italic;
@@ -227,9 +213,10 @@
     }
     .legend-note { margin-top: 3px; }
 
-    /* ── Popup ─────────────────────────────────────────────────────────────── */
-    /* The shell, title, subtitle, facts and actions are the kit's (.mco-popup,
-       MCO.map.popupContent). These are this app's extra blocks inside it. */
+    /* ── Station sheet body ────────────────────────────────────────────────── */
+    /* The title, subtitle, facts and actions are the kit's (MCO.map.popupContent,
+       shown in the MCO.initSheet sheet at every width). These are this app's
+       extra blocks inside it. */
     .pop-tags { margin-top: 6px; }
     .pop-badge {
       display: inline-block; font-size: 0.62rem; font-weight: 600;
@@ -244,21 +231,26 @@
       font-family: var(--font-mono); font-size: 0.72rem;
       color: var(--text-secondary);
     }
+    /* A category pill: chrome tokens for the text (--text-primary on
+       --bg-raised), and the category's color as a dot like the map's marker
+       (app.js sets --pill from the kit set). No record is the hollow dot. */
     .pop-pill {
-      display: inline-block; font-size: 0.66rem; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 0.66rem; font-weight: 600;
       padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+      background: var(--bg-raised); color: var(--text-primary);
+      border: 1px solid var(--border);
     }
-    /* Pill text over the data-palette colors (not tokens — data, not chrome).
-       Measured (WCAG 1.4.3, 4.5:1 at bold 0.66rem): white on the roma blue
-       6.39:1; white on the roma brown 6.11:1; #1a1a2e on the grey 6.71:1. */
-    .pop-pill.fresh { background: var(--status-fresh); color: #fff; }
-    .pop-pill.stale { background: var(--status-stale); color: #fff; }
-    .pop-pill.null  { background: var(--status-null);  color: #1a1a2e; }
-    /* Health pills reuse the same three data colors. #1a1a2e on the pale
-       roma middle: 12.83:1. */
-    .pop-pill.operational { background: var(--status-fresh);   color: #fff; }
-    .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
-    .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
+    .pop-pill::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: var(--pill, transparent);
+    }
+    .pop-pill.null::before { background: transparent; border: 1.5px solid var(--dot-stroke); width: 5px; height: 5px; }
+    .pop-siblings { margin-top: 10px; }
+    .pop-siblings h3 {
+      margin: 0 0 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);
+    }
+    .pop-siblings ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
     .pop-missing {
       margin-top: 8px; padding: 6px 8px;
       background: var(--bg-raised); border-radius: var(--radius-sm);
@@ -286,34 +278,40 @@
        1400 rung). One row needs ~1185px with the mode buttons and the kit's
        220px search, so at ≤1400px the mode group becomes a <select>
        (MCO.initSegmentedFallback, mq 1400), the search narrows to 180px, and
-       the refresh stamp drops its word ("● 12:21 MT"). That keeps the bar one
-       row down to 1061px. At the ≤1060 rung the
-       primary controls drop to a second row, while row 1 keeps the brand
-       left and refresh/labels/theme/info right. CSS `order` swaps the visual
-       position without disturbing tab order. */
+       the kit drops the stamp's word ("● 9:40 PM MST", kit 0.21.0). On a
+       phone the bar is the kit's one-row compact drawer (data-rail="compact"). */
     @media (max-width: 1400px) {
       /* kit-override: 180px, not 220, at the 1400 rung (see above). */
       .mco-search-input { width: 180px; }
-      /* The stamp sheds its word: "● 12:21 MT". Visually hidden, not removed,
-         so AT still reads "refreshed 12:21 MT" (app.js refreshStamp). */
-      .refresh-word {
-        position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
-        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-      }
     }
-    @media (max-width: 1060px) {
-      .nav-meta  { order: 1; }
-      .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
+    /* kit-override: the tablet bar (above compact, ≤ 1060px) can't hold one
+       row, so the primary controls take the second row while row 1 keeps the
+       brand left and the stamp, labels, theme and info right. CSS `order`
+       swaps the visual position without disturbing tab order. Not on
+       compact: there the bar is the kit's one-row drawer and these groups
+       stack inside it. */
+    @media (min-width: 641px) and (max-width: 1060px) and (min-height: 561px) {
+      /* kit-override: row 1 (above). */
+      .mco-navbar .nav-meta  { order: 1; }
+      .mco-navbar .controls  { order: 2; flex-basis: 100%; margin-left: 0; }
     }
-    /* The mode <select> that replaces the segmented buttons at ≤1400px.
-       height, not min-height: WebKit ignores min-height on a native select. */
+    /* The mode <select>: the segmented buttons' fallback at ≤1400px, and the
+       phone bar's hot control (#rail-mode-select). One bar height
+       (--control-h, kit 0.21.0). height, not min-height: WebKit ignores
+       min-height on a native select. */
     .mode-select {
-      height: 32px; padding: 0 0.5rem;
+      height: var(--control-h); padding: 0 0.5rem;
       background-color: var(--input-bg); color: var(--text-primary);
       border: 1px solid var(--ctrl-border); border-radius: var(--radius-md);
       font: inherit; font-size: 0.8rem;
     }
-    @media (hover: none) { .mode-select { height: 40px; } }
+    /* The landscape rail is a 56px column: a select doesn't fit there, and
+       the drawer beside it carries the same control. Matches the kit's
+       RAIL_MQ (MCO.viewport). */
+    @media (max-height: 560px) and (orientation: landscape) {
+      /* kit-override: the rail column holds buttons only. */
+      .mco-rail .mode-select { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -321,12 +319,13 @@
 <!-- Skip link first (WCAG 2.4.1) — mco-web-style snippets/skip-link.html -->
 <a class="mco-skip-link" href="#main">Skip to map</a>
 
-<!-- data-rail (kit 0.10.0): on a landscape phone the two-row bar would eat
-     a third of the map's height; it becomes a 56px left rail instead, with
-     the brand, controls and meta in .mco-nav-drawer (MCO.initNavRail).
-     Outside rail mode .mco-rail is hidden and the drawer is display:contents,
-     so the bar lays out exactly as before. -->
-<header id="navbar" class="mco-navbar" data-rail>
+<!-- data-rail="compact" (kit 0.21.0): on a portrait phone the bar is one
+     row (badge · mode select · search · ☰) and the brand, controls and meta
+     open from ☰ as a right drawer (.mco-nav-drawer, MCO.initNavRail); on a
+     landscape phone it is the 56px left rail (kit 0.10.0). Above compact
+     .mco-rail is hidden and the drawer is display:contents, so the desktop
+     bar is unchanged. -->
+<header id="navbar" class="mco-navbar" data-rail="compact">
   <a href="https://climate.umt.edu" target="_blank" rel="noopener noreferrer"
      class="logo-link" aria-label="Montana Climate Office">
     <img src="assets/mco-logo.png" alt="" class="logo-img" width="40" height="40">
@@ -338,8 +337,17 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
            stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
-    <!-- Hot control: search opens the drawer with the field focused. -->
-    <button type="button" class="nav-btn icon-only" id="btn-rail-search" aria-label="Search stations">
+    <!-- Hot control: the mode, the choice a visitor repeats on the map. The
+         same choice sits in the drawer (the segmented group's select). -->
+    <select id="rail-mode-select" class="mode-select" aria-label="Visualization mode">
+      <option value="status">Status</option>
+      <option value="timesince">Time since</option>
+      <option value="health">Health</option>
+    </select>
+    <!-- Last in .mco-rail: opens the drawer on the search field
+         (MCO.initNavRail's search option). -->
+    <button type="button" class="nav-btn icon-only mco-search-toggle" id="btn-rail-search"
+            aria-label="Search stations" aria-controls="nav-drawer" aria-expanded="false">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -388,21 +396,11 @@
   </div>
 
   <div class="nav-meta">
-    <!-- At compact widths (≤640px) the search field collapses into this
-         disclosure and reopens as an overlay bar under the navbar (kit
-         .mco-search-collapse + MCO.initSearchCollapse). Hidden at wider widths.
-         640px rather than 460px is what removes this bar's third row: with the
-         240px field gone the controls fit one line with ~100px to spare. -->
-    <button type="button" class="nav-btn icon-only mco-search-toggle" id="btn-search-toggle"
-            aria-expanded="false" aria-controls="search-wrap" aria-label="Search stations">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-    </button>
-    <span class="refresh-status" title="Last refreshed">
+    <!-- The freshness stamp: MCO.formatUpdatedMT of the newest record's time
+         fills the text span ("Updated 9:40 PM MST", kit 0.21.0). -->
+    <span class="refresh-status">
       <span class="dot" aria-hidden="true"></span>
-      <span id="refresh-stamp">loading…</span>
+      <span id="refresh-stamp">Loading…</span>
     </span>
     <button type="button" class="nav-btn icon-only" id="btn-labels" aria-pressed="false"
             title="Toggle station ID labels" aria-label="Toggle station ID labels">
@@ -465,8 +463,9 @@
     </aside>
   </div>
 
-  <!-- Station detail on compact viewports (MCO.initSheet, kit 0.9.0): peek /
-       full detents, drag or grip; desktop keeps the anchored popup. -->
+  <!-- Station detail at every width (MCO.initSheet, kit 0.21.0 rule):
+       end-docked above compact, a bottom sheet with peek / full detents on
+       compact. -->
   <section class="mco-sheet" id="station-sheet" aria-labelledby="station-sheet-title" data-state="closed" hidden>
     <div class="mco-sheet-head">
       <button type="button" class="mco-sheet-grip" aria-label="Expand details" aria-expanded="false"></button>
@@ -498,32 +497,39 @@
     </div>
 
     <div class="info-section">
-      <h3>Modes</h3>
+      <h3>What this shows</h3>
+      <p>Every Montana Mesonet station, colored by how recently it reported. Three modes:</p>
       <ul>
-        <li><strong>Status</strong> — blue if reported in the last 2 hours, brown otherwise.</li>
-        <li><strong>Time since</strong> — 5 bins from &lt;2 h to &gt;24 h.</li>
-        <li><strong>Health</strong> — <strong>Operational</strong>: reported in the last 2 hours with every expected sensor present. <strong>Partial</strong>: reported, but one or more sensors are silent (the popup lists them). <strong>Total outage</strong>: no report in the last 2 hours.</li>
+        <li><strong>Status</strong>: reported in the last 2 hours, or stale (2 hours or more).</li>
+        <li><strong>Time since</strong>: 5 bins from under 2 hours to over 24 hours.</li>
+        <li><strong>Health</strong>: <strong>Operational</strong> reported in the last 2 hours with every expected sensor present. <strong>Partial</strong> reported, but one or more sensors are silent (the station's details list them). <strong>Total outage</strong> has not reported in the last 2 hours.</li>
       </ul>
+      <p>A hollow dot has no record. HydroMet and AgriMet stations draw the same; the network chips show or hide each network.</p>
     </div>
 
     <div class="info-section">
       <h3>How to use it</h3>
       <ul>
-        <li><strong>Legend counts</strong> — every row shows how many of the selected networks' stations fall in that category, and the share.</li>
-        <li><strong>Search</strong> — press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> + <kbd>Enter</kbd> to pick.</li>
-        <li><strong>Networks</strong> — chips toggle HydroMet / AgriMet.</li>
-        <li><strong>Legend</strong> — click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate.</li>
-        <li><strong>Hover</strong> a dot for time since last report; <strong>click</strong> for full details + dashboard link.</li>
-        <li><strong>Shapes</strong> — a filled dot is a HydroMet station, a dot with an orange ring an AgriMet station; the fill is always the status color, and an empty (unfilled) marker means no record.</li>
-        <li><strong>Numbered dots</strong> — multiple stations share that location. Hover or tap to expand them; click one for its details.</li>
-        <li><kbd>Esc</kbd> closes any popup or fan-out.</li>
-        <li>Single-key shortcuts can be disabled by adding <code>?kbd=off</code> to the URL (it sticks while you browse).</li>
+        <li><strong>Mode</strong>: pick Status, Time since or Health in the bar.</li>
+        <li><strong>Legend</strong>: every row shows how many of the selected networks' stations fall in that category, and the share. Click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.</li>
+        <li><strong>Networks</strong>: the chips show or hide HydroMet and AgriMet.</li>
+        <li><strong>Search</strong>: press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> and <kbd>Enter</kbd> to pick.</li>
+        <li><strong>Stations</strong>: hover a dot for the time since its last report; click or tap it for its details and a dashboard link.</li>
+        <li><strong>Numbered dots</strong>: more than one station shares that site. Hover or tap to fan them out, then pick one. A station's details list the others at its site.</li>
+        <li><kbd>Esc</kbd> closes the details, then the fan-out.</li>
+        <li>Single-key shortcuts can be turned off by adding <code>?kbd=off</code> to the URL (it sticks while you browse).</li>
       </ul>
     </div>
 
     <div class="info-section">
       <h3>Share or bookmark</h3>
-      <p>The URL reflects every choice — copy it from the address bar. <code>?station=&lt;id&gt;</code> deep-links a single station. Times are Mountain Time.</p>
+      <p>The URL reflects every choice; copy it from the address bar. <code>?station=&lt;id&gt;</code> opens one station's details, and Back closes them. Times are Mountain Time.</p>
+    </div>
+
+    <div class="info-section">
+      <h3>Data</h3>
+      <p>Stations and their latest records come from the Montana Mesonet API, polled every 5 minutes. Health compares each station's latest record with its list of expected sensors. "Updated" is the time of the newest record.</p>
+      <p class="info-credit" id="info-credit"></p>
     </div>
   </div>
 </dialog>
