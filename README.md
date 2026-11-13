@@ -28,7 +28,7 @@ Other features:
 - **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
 - **Montana state outline** so the state shape reads as the primary frame.
 - **Dark → light → high-contrast theme** button (high contrast uses the dark basemap) with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
-- **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
+- **Map controls**: zoom in/out + a "zoom to full extent" button (top-left). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
 - **First-visit help dialog** auto-opens once (the kit's `intro` option), never over a deep link.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
 

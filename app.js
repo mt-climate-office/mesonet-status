@@ -394,7 +394,7 @@
       onMapFail(err);
       return;
     }
-    MCO.map.addNavigation(map);                                     // top-right, no compass
+    MCO.map.addNavigation(map);                                     // top-left (kit 1.0.0), no compass
     MCO.map.addFitControl(map, { onBeforeFit: () => coloc && coloc.close() });
     zoomFloor = MCO.map.installZoomFloor(map);                      // snapback + resize refit
     // The legend clears the attribution (index.html #legend): publish the
