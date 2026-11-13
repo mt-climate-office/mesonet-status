@@ -115,7 +115,7 @@
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/theme/mco-theme.css"
-        integrity="sha384-HjjLXx7sl8kCo5AGlJntIezB6zBy0d6tLrCo3ies6XMRNsnZTcXPMGRHbPXULsbR"
+        integrity="sha384-BXqc+uDId7rVls9Yd+C1DE4heDuFKEWjgZ+7Zuuy0rCI8RosEzpzTblWSHBFoQKf"
         crossorigin="anonymous">
 
   <style>
@@ -197,31 +197,20 @@
        is a tint plus a ✓, so the state isn't color alone. */
 
     /* ── Legend (kit .mco-panel; app owns position + row internals) ───────── */
-    #map-container {
+    #legend {
       /* Clear MapLibre's attribution (a licence requirement: it must stay
          visible and clickable). On narrow maps it wraps to two lines across
          the whole bottom edge, under the legend; app.js publishes the
          bottom-right control box's measured height as --attrib-h, so the
          legend sits 4px above it (and drops back when the attribution
          collapses to its ⓘ). On a wide map the single-line attribution
-         measures ~32px, so this stays the 36px it always was. */
-      --legend-bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
-    }
-    #legend {
-      bottom: var(--legend-bottom);
+         measures ~32px, so this stays the 36px it always was. On a phone the
+         legend lives in the ☰ drawer and the kit's Legend button takes its
+         corner (MCO.initLegendDrawer, kit 1.0.0). */
+      bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
       transition: bottom var(--transition);
       left: 12px;
       min-width: 180px;
-    }
-    /* On a phone the legend lives in the ☰ drawer and a Legend button takes
-       its corner (MCO.initLegendDrawer, kit 1.0.0).
-       kit-override: the kit sets the button's bottom once, from where the
-       panel sat when the drawer took it, which is before MapLibre's
-       attribution exists, so at 390px the button covered the top of the
-       wrapped attribution by 18px. Keep it on the legend's live rule. */
-    #map-container > .mco-legend-btn {
-      bottom: var(--legend-bottom) !important;
-      transition: bottom var(--transition);
     }
     /* Rows are the kit's .mco-legend-row (MCO.initLegendToggles); the share
        column is this app's. */

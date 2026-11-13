@@ -430,16 +430,59 @@ export default {
       await close();
     }
     for (const [size, vp] of [['1440', DESKTOP], ['768', { width: 768, height: 1024, touch: true }]]) {
-      // Above compact the legend floats on the map as before; no Legend button.
+      // Above compact the legend floats on the map as before; no Legend
+      // button. It must not overlap the attribution (a licence requirement;
+      // on touch at 768 the attribution's ⓘ is 44px, which made other apps'
+      // legends overlap it), and every credit stays clickable.
       const { page, close } = await open('?legend=open', { viewport: vp });
       const r = await page.evaluate(() => {
         const L = document.getElementById('legend');
         const B = L.getBoundingClientRect(), M = document.getElementById('map-container').getBoundingClientRect();
+        const A = document.querySelector('.maplibregl-ctrl-attrib').getBoundingClientRect();
+        const overlap = Math.max(0, Math.min(B.right, A.right) - Math.max(B.left, A.left)) * Math.max(0, Math.min(B.bottom, A.bottom) - Math.max(B.top, A.top));
+        const blocked = [...document.querySelectorAll('.maplibregl-ctrl-attrib-inner a, .maplibregl-ctrl-attrib-button')].filter((a) => {
+          const b = a.getBoundingClientRect(); if (!b.width) return false;
+          const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+          return !(e && (a === e || a.contains(e)));
+        }).map((a) => a.textContent.trim() || a.className);
         const btn = document.querySelector('.mco-legend-btn');
         return { floating: L.parentElement.id === 'map-container' && getComputedStyle(L).position === 'absolute', inside: B.left >= M.left && B.bottom <= M.bottom && B.top >= M.top,
+          overlap: Math.round(overlap), blocked,
           btn: !btn || btn.hidden || getComputedStyle(btn).display === 'none', slot: !document.querySelector('.mco-legend-slot') || document.querySelector('.mco-legend-slot').hidden };
       });
-      check(`${tag} ${size}: legend floats on the map, no Legend button or drawer group`, r.floating && r.inside && r.btn && r.slot, JSON.stringify(r));
+      check(`${tag} ${size}: legend floats on the map clear of the attribution (overlap ${r.overlap}px²), no Legend button or drawer group`,
+        r.floating && r.inside && r.overlap === 0 && r.blocked.length === 0 && r.btn && r.slot, JSON.stringify(r));
+      await close();
+    }
+    for (const vp of [PHONE, { width: 844, height: 390, touch: true }]) {
+      // The info button lives in the ☰ drawer on a phone. Opened from the
+      // open drawer (kit 1.0.0), the dialog is live with focus inside; Esc
+      // closes it with focus back on the info button in the still-open
+      // drawer; a second Esc closes the drawer back to ☰. Activated from the
+      // keyboard: WebKit does not focus a clicked button, so a pointer
+      // opener there is whatever held focus before (the kit's rule).
+      const size = `${vp.width}×${vp.height}`;
+      const { page, close } = await open('', { viewport: vp });
+      await page.click('#btn-rail-menu');
+      await page.waitForTimeout(400);
+      await page.focus('#btn-info');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(500);
+      const a = await page.evaluate(() => {
+        const d = document.getElementById('info-modal');
+        const x = d.querySelector('.modal-close').getBoundingClientRect();
+        const t = document.elementFromPoint(x.left + x.width / 2, x.top + x.height / 2);
+        return { open: d.open, focusIn: d.contains(document.activeElement), inert: !!d.closest('[inert]'), closeHit: !!t && d.contains(t) };
+      });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+      const b = await page.evaluate(() => ({ open: document.getElementById('info-modal').open, focus: document.activeElement?.id,
+        drawer: document.getElementById('nav-drawer').classList.contains('is-open') }));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(400);
+      const c = await page.evaluate(() => ({ drawer: document.getElementById('nav-drawer').classList.contains('is-open'), focus: document.activeElement?.id }));
+      check(`${tag} ${size}: info dialog from the open drawer is live (${JSON.stringify(a)}); Esc → ${JSON.stringify(b)}; Esc → ${JSON.stringify(c)}`,
+        a.open && a.focusIn && !a.inert && a.closeHit && !b.open && b.focus === 'btn-info' && b.drawer && !c.drawer && c.focus === 'btn-rail-menu');
       await close();
     }
   },

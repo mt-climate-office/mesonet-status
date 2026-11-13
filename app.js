@@ -1269,9 +1269,9 @@
   // drawer at it. Above compact it floats as before. The panel moves with
   // its collapse and row toggles.
   MCO.initLegendDrawer({ panel: document.getElementById('legend'), rail });
-  // The info dialog would open under an inert page: close the drawer first
-  // (capture, so it runs before the kit's own opener).
-  btnInfo.addEventListener('click', () => rail.close({ restoreFocus: false }), true);
+  // The info button sits in the drawer on a phone. The kit (1.0.0) keeps a
+  // dialog opened from the open drawer usable and returns focus to the
+  // button, so the drawer stays open under it.
 
   function selectStation(stationId) {
     // Picking from the drawer: close it and let the detail take focus; the
