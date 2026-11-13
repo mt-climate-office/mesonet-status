@@ -197,7 +197,7 @@
        is a tint plus a ✓, so the state isn't color alone. */
 
     /* ── Legend (kit .mco-panel; app owns position + row internals) ───────── */
-    #legend {
+    #map-container {
       /* Clear MapLibre's attribution (a licence requirement: it must stay
          visible and clickable). On narrow maps it wraps to two lines across
          the whole bottom edge, under the legend; app.js publishes the
@@ -205,10 +205,23 @@
          legend sits 4px above it (and drops back when the attribution
          collapses to its ⓘ). On a wide map the single-line attribution
          measures ~32px, so this stays the 36px it always was. */
-      bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
+      --legend-bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
+    }
+    #legend {
+      bottom: var(--legend-bottom);
       transition: bottom var(--transition);
       left: 12px;
       min-width: 180px;
+    }
+    /* On a phone the legend lives in the ☰ drawer and a Legend button takes
+       its corner (MCO.initLegendDrawer, kit 1.0.0).
+       kit-override: the kit sets the button's bottom once, from where the
+       panel sat when the drawer took it, which is before MapLibre's
+       attribution exists, so at 390px the button covered the top of the
+       wrapped attribution by 18px. Keep it on the legend's live rule. */
+    #map-container > .mco-legend-btn {
+      bottom: var(--legend-bottom) !important;
+      transition: bottom var(--transition);
     }
     /* Rows are the kit's .mco-legend-row (MCO.initLegendToggles); the share
        column is this app's. */
@@ -306,9 +319,9 @@
       border: 1px solid var(--ctrl-border); border-radius: var(--radius-md);
       font: inherit; font-size: 0.8rem;
     }
-    /* The landscape rail is a 56px column: a select doesn't fit there, and
-       the drawer beside it carries the same control. Matches the kit's
-       RAIL_MQ (MCO.viewport). */
+    /* The landscape rail (at the right edge, kit 1.0.0) is a 56px column: a
+       select doesn't fit there, and the ☰ drawer beside it carries the same
+       control (the mode select). Matches the kit's RAIL_MQ (MCO.viewport). */
     @media (max-height: 560px) and (orientation: landscape) {
       /* kit-override: the rail column holds buttons only. */
       .mco-rail .mode-select { display: none; }
@@ -323,9 +336,11 @@
 <!-- data-rail="compact" (kit 0.21.0): on a portrait phone the bar is one
      row (badge · mode select · search · ☰) and the brand, controls and meta
      open from ☰ as a right drawer (.mco-nav-drawer, MCO.initNavRail); on a
-     landscape phone it is the 56px left rail (kit 0.10.0). Above compact
-     .mco-rail is hidden and the drawer is display:contents, so the desktop
-     bar is unchanged. -->
+     short landscape phone it is the 56px rail at the RIGHT edge (kit 1.0.0:
+     badge, ☰, search), with the same drawer opening beside it. Above
+     compact .mco-rail is hidden and the drawer is display:contents, so the
+     desktop bar is unchanged. This app has no time controls, so no
+     .mco-controlbar. -->
 <header id="navbar" class="mco-navbar" data-rail="compact">
   <a href="https://climate.umt.edu" target="_blank" rel="noopener noreferrer"
      class="logo-link" aria-label="Montana Climate Office">
