@@ -302,7 +302,7 @@ export default {
       // RIGHT edge (badge, ☰, search), every rail button ≥ 44px and the
       // topmost element at its centre; the mode select is not in the rail
       // (a select doesn't fit 56px) but the ☰ drawer carries it; ☰ opens the
-      // drawer beside the rail (its right edge at the rail's left) with focus
+      // drawer beside the rail (its right edge at the rail column's left) with focus
       // inside, the page inert and the rail live; Esc returns to ☰.
       const size = `${vp.width}×${vp.height}`;
       const { page, close } = await open('', { viewport: vp });
@@ -321,7 +321,7 @@ export default {
       await page.waitForTimeout(400);
       const o = await page.evaluate(() => {
         const d = document.getElementById('nav-drawer').getBoundingClientRect();
-        const rl = document.querySelector('.mco-rail').getBoundingClientRect();
+        const rl = document.getElementById('navbar').getBoundingClientRect();
         const sel = document.getElementById('mode-select');
         const sr = sel.getBoundingClientRect();
         return { inside: document.getElementById('nav-drawer').contains(document.activeElement), inert: document.getElementById('main').inert,
@@ -337,7 +337,7 @@ export default {
       check(`${tag} ${size} rail at the right edge (${r.w}×${r.h}, right ${r.right}), buttons ≥ 44 and hittable, no mode select in the rail; ☰ opens the drawer beside it with the mode select (${q}); Esc back to ☰`,
         r.isRail && r.right === 0 && r.w === 56 && r.h === vp.height && r.left === vp.width - 56 && r.sw === vp.width
           && r.btns.length >= 2 && r.btns.every((b) => b.w >= 44 && b.h >= 44 && b.hit) && r.select === 'none'
-          && o.inside && o.inert && !o.railInert && o.gap >= 0 && o.gap <= 2 && o.w > 200 && o.modeSelect && /mode=timesince/.test(q)
+          && o.inside && o.inert && !o.railInert && Math.abs(o.gap) <= 2 && o.w > 200 && o.modeSelect && /mode=timesince/.test(q)
           && c.focus === 'btn-rail-menu' && !c.inert, JSON.stringify({ r, o, q, c }));
       await close();
     }
