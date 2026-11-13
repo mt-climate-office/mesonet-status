@@ -13,8 +13,8 @@ import { load } from '../mco-web-style/tools/verify/lib.mjs';
 
 const STATION = 'aceabsar';   // a real id from /api/stations/ (a colocated HydroMet + AgriMet site)
 const rows = () => document.querySelectorAll('#sr-station-table tbody tr').length > 100;
-// The station detail is the kit sheet at every width (MCO.initSheet, kit
-// 0.21.0), open when it is shown and not data-state="closed". Inlined in
+// The station detail is the kit sheet at every width (MCO.initSheet; one
+// state from kit 1.0.0), open when it is shown and data-state="full". Inlined in
 // each page function below — a function passed to the page can't close over
 // this module.
 const PHONE = { width: 390, height: 844, touch: true };
@@ -48,7 +48,7 @@ export default {
       // The deep link opens the station sheet (kit 0.21.0), at 1440 and 390.
       name: 'station', query: `?station=${STATION}`,
       ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
-        && [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed'),
+        && [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state === 'full'),
     },
   ],
   exemptTargets: '',
@@ -68,7 +68,7 @@ export default {
       const r = await roma(page);
       return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[1], r[2], r[4]] : [r[0], r[4]];
     };
-    const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed');
+    const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state === 'full');
     {
       const { page, close } = await open('?theme=light');
       await page.waitForTimeout(1500);
@@ -174,7 +174,7 @@ export default {
         await page.goBack({ waitUntil: 'commit' });
         await page.waitForTimeout(1200);
         const after = await page.evaluate(() => ({
-          open: [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state !== 'closed'),
+          open: [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state === 'full'),
           q: location.search,
         }));
         check(`${tag} ${name}: search opens the sheet (${q1}), Back closes it (${after.q})`,
@@ -297,35 +297,149 @@ export default {
       check(`${tag} intro: opens once on a plain visit (focus on close), not over ?station= (${JSON.stringify({ a, b })})`,
         a.open && a.focus && a.seen === '1' && !b.open && b.seen === null);
     }
-    {
-      // Landscape phone (kit 0.10.0 rail): the bar is a 56px rail; the menu
-      // opens the drawer with focus inside and the page inert; Esc returns.
-      const { page, close } = await open('', { viewport: { width: 750, height: 342, touch: true } });
-      const w = await page.evaluate(() => Math.round(document.getElementById('navbar').getBoundingClientRect().width));
+    for (const vp of [{ width: 844, height: 390, touch: true }, { width: 750, height: 342, touch: true }]) {
+      // Short landscape phone (kit 1.0.0): the bar is a 56px rail at the
+      // RIGHT edge (badge, ☰, search), every rail button ≥ 44px and the
+      // topmost element at its centre; the mode select is not in the rail
+      // (a select doesn't fit 56px) but the ☰ drawer carries it; ☰ opens the
+      // drawer beside the rail (its right edge at the rail's left) with focus
+      // inside, the page inert and the rail live; Esc returns to ☰.
+      const size = `${vp.width}×${vp.height}`;
+      const { page, close } = await open('', { viewport: vp });
+      const r = await page.evaluate(() => {
+        const R = (el) => el.getBoundingClientRect();
+        const nav = R(document.getElementById('navbar'));
+        const btns = [...document.querySelectorAll('.mco-rail .nav-btn')].filter((b) => R(b).width > 0).map((b) => {
+          const q = R(b); const t = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
+          return { id: b.id, w: Math.round(q.width), h: Math.round(q.height), hit: !!t && b.contains(t) };
+        });
+        return { left: Math.round(nav.left), right: Math.round(window.innerWidth - nav.right), w: Math.round(nav.width), h: Math.round(nav.height),
+          isRail: MCO.viewport.isRail(), btns, select: getComputedStyle(document.getElementById('rail-mode-select')).display,
+          sw: document.documentElement.scrollWidth };
+      });
       await page.click('#btn-rail-menu');
-      await page.waitForTimeout(300);
-      const o = await page.evaluate(() => ({ inside: document.getElementById('nav-drawer').contains(document.activeElement), inert: document.getElementById('main').inert }));
+      await page.waitForTimeout(400);
+      const o = await page.evaluate(() => {
+        const d = document.getElementById('nav-drawer').getBoundingClientRect();
+        const rl = document.querySelector('.mco-rail').getBoundingClientRect();
+        const sel = document.getElementById('mode-select');
+        const sr = sel.getBoundingClientRect();
+        return { inside: document.getElementById('nav-drawer').contains(document.activeElement), inert: document.getElementById('main').inert,
+          railInert: !!document.getElementById('navbar').closest('[inert]'), gap: Math.round(rl.left - d.right), w: Math.round(d.width),
+          modeSelect: !sel.hidden && sr.width > 0 && sr.height > 0 };
+      });
+      await page.selectOption('#mode-select', 'timesince');
+      await page.waitForTimeout(500);
+      const q = await page.evaluate(() => location.search);
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);
       const c = await page.evaluate(() => ({ focus: document.activeElement?.id, inert: document.getElementById('main').inert }));
-      check(`${tag} 750×342 rail: ${w}px bar, drawer focus+inert, Esc back to the menu`, w === 56 && o.inside && o.inert && c.focus === 'btn-rail-menu' && !c.inert, JSON.stringify({ w, o, c }));
+      check(`${tag} ${size} rail at the right edge (${r.w}×${r.h}, right ${r.right}), buttons ≥ 44 and hittable, no mode select in the rail; ☰ opens the drawer beside it with the mode select (${q}); Esc back to ☰`,
+        r.isRail && r.right === 0 && r.w === 56 && r.h === vp.height && r.left === vp.width - 56 && r.sw === vp.width
+          && r.btns.length >= 2 && r.btns.every((b) => b.w >= 44 && b.h >= 44 && b.hit) && r.select === 'none'
+          && o.inside && o.inert && !o.railInert && o.gap >= 0 && o.gap <= 2 && o.w > 200 && o.modeSelect && /mode=timesince/.test(q)
+          && c.focus === 'btn-rail-menu' && !c.inert, JSON.stringify({ r, o, q, c }));
+      await close();
+    }
+    for (const [size, vp] of [['390×844', PHONE], ['844×390', { width: 844, height: 390, touch: true }], ['320×568', { width: 320, height: 568, touch: true }]]) {
+      // Station panel on a phone (kit 1.0.0): one state ("full"), the whole
+      // area under the bar (left of the rail in landscape), the bar not
+      // inert; the 44px close button is hittable and closes it, focus back
+      // in the bar.
+      const { page, close } = await open(`?station=${STATION}`, { viewport: vp, ready: rows });
+      const ok = await page.waitForFunction(() => document.querySelector('#station-sheet[data-state="full"]:not([hidden])'), null, { timeout: 15000 }).then(() => true, () => false);
+      await page.waitForTimeout(600);
+      const m = await page.evaluate(() => {
+        const R = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; };
+        const nav = R(document.getElementById('navbar')), sh = R(document.getElementById('station-sheet'));
+        const x = document.querySelector('#station-sheet [data-close-sheet]'); const xr = x.getBoundingClientRect();
+        const t = document.elementFromPoint(xr.left + xr.width / 2, xr.top + xr.height / 2);
+        return { nav, sh, vw: window.innerWidth, vh: window.innerHeight, rail: MCO.viewport.isRail(),
+          navInert: !!document.getElementById('navbar').closest('[inert]'), mapInert: !!document.getElementById('map').closest('[inert]'),
+          close: { w: Math.round(xr.width), h: Math.round(xr.height), hit: !!t && x.contains(t) }, grip: document.querySelectorAll('.mco-sheet-grip').length };
+      });
+      const want = m.rail ? { x: 0, y: 0, r: m.nav.x, b: m.vh } : { x: 0, y: m.nav.b, r: m.vw, b: m.vh };
+      const fits = Math.abs(m.sh.x - want.x) <= 1 && Math.abs(m.sh.y - want.y) <= 1 && Math.abs(m.sh.r - want.r) <= 1 && Math.abs(m.sh.b - want.b) <= 1;
+      await page.click('#station-sheet [data-close-sheet]');
+      await page.waitForTimeout(600);
+      const after = await page.evaluate(() => ({ state: document.getElementById('station-sheet').dataset.state, q: location.search,
+        focusInBar: !!document.activeElement?.closest('#navbar, #main') }));
+      check(`${tag} ${size}: ?station= opens the panel full height under the bar (${JSON.stringify(m.sh)}), bar live, close ${m.close.w}×${m.close.h} hittable and closes`,
+        ok && fits && !m.navInert && m.mapInert && m.close.w >= 44 && m.close.h >= 44 && m.close.hit && m.grip === 0
+          && after.state === 'closed' && !/station=/.test(after.q), JSON.stringify({ m, want, after }));
       await close();
     }
     {
-      // Attribution is a licence requirement: at 390 (where it wraps across
-      // the whole bottom edge) every credit link must be the topmost element
-      // at its centre, and the legend must not overlap it.
-      const { page, close } = await open('?legend=open', { viewport: PHONE });
+      // The panel header is the same at every width (kit 1.0.0 consistency
+      // rule): the title, then one close button, 44px, top right.
+      const head = [];
+      for (const vp of [DESKTOP, { width: 768, height: 1024, touch: true }, PHONE]) {
+        const { page, close } = await open(`?station=${STATION}`, { viewport: vp, ready: rows });
+        await page.waitForFunction(sheetOpen, null, { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(400);
+        head.push(await page.evaluate(() => {
+          const h = document.querySelector('#station-sheet .mco-sheet-head');
+          const x = h.querySelector('[data-close-sheet]').getBoundingClientRect(), hr = h.getBoundingClientRect();
+          return { kids: [...h.children].map((c) => c.className + '|' + (c.getAttribute('aria-label') || c.textContent)).join(','),
+            x: [Math.round(x.width), Math.round(x.height)].join('×'), topRight: Math.round(hr.right - x.right) <= 16 && Math.round(x.top - hr.top) <= 16 };
+        }));
+        await close();
+      }
+      check(`${tag} panel header identical at 1440, 768 and 390 (${head[0].kids}; close ${head.map((h) => h.x).join(', ')})`,
+        head.every((h) => h.kids === head[0].kids && h.x === '44×44' && h.topRight), JSON.stringify(head));
+    }
+    {
+      // Legend on a phone (kit 1.0.0 MCO.initLegendDrawer): the panel is in a
+      // "Legend" group in the ☰ drawer, a Legend button holds its corner on
+      // the map clear of the attribution (a licence requirement: every credit
+      // stays the topmost element at its centre); the button opens the
+      // drawer at the group with focus on the legend's title, the rows still
+      // toggle there, and Esc returns focus to the button.
+      const { page, close } = await open('?legend=collapsed', { viewport: PHONE });
       const r = await page.evaluate(() => {
-        const L = document.getElementById('legend').getBoundingClientRect();
+        const btn = document.querySelector('.mco-legend-btn');
+        const B = btn.getBoundingClientRect();
         const A = document.querySelector('.maplibregl-ctrl-attrib').getBoundingClientRect();
+        const t = document.elementFromPoint(B.left + B.width / 2, B.top + B.height / 2);
         const blocked = [...document.querySelectorAll('.maplibregl-ctrl-attrib-inner a')].filter((a) => {
-          const b = a.getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-          return !(t && (a === t || a.contains(t)));
+          const b = a.getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+          return !(e && (a === e || a.contains(e)));
         }).map((a) => a.textContent.trim());
-        return { gap: Math.round(A.top - L.bottom), blocked };
+        return { name: btn.textContent.trim(), hidden: btn.hidden, hit: !!t && btn.contains(t), h: Math.round(B.height), gap: Math.round(A.top - B.bottom), blocked,
+          inDrawer: !!document.getElementById('legend').closest('#nav-drawer .mco-legend-slot') };
       });
-      check(`${tag} 390: legend clears the attribution (gap ${r.gap}px), every credit clickable`, r.gap >= 0 && r.blocked.length === 0, JSON.stringify(r));
+      await page.click('.mco-legend-btn');
+      await page.waitForTimeout(500);
+      const o = await page.evaluate(() => {
+        const t = document.getElementById('legend-title');
+        const d = document.getElementById('nav-drawer').getBoundingClientRect(), tr = t.getBoundingClientRect();
+        return { open: document.getElementById('nav-drawer').classList.contains('is-open'), focus: document.activeElement === t,
+          expanded: document.getElementById('legend-toggle-btn').getAttribute('aria-expanded'), visible: tr.top >= d.top && tr.bottom <= d.bottom,
+          slot: document.querySelector('.mco-legend-slot')?.getAttribute('aria-label') };
+      });
+      await page.locator('#legend-rows [aria-pressed]').first().click();
+      await page.waitForTimeout(500);
+      const q = await page.evaluate(() => location.search);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(400);
+      const back = await page.evaluate(() => document.activeElement?.classList.contains('mco-legend-btn'));
+      check(`${tag} 390: legend in the drawer; "${r.name}" button clears the attribution (gap ${r.gap}px), credits clickable; it opens the drawer at the "${o.slot}" group (focus on its title, expanded), a row toggles (${q}), Esc back to the button`,
+        r.name === 'Legend' && !r.hidden && r.hit && r.gap >= 0 && r.blocked.length === 0 && r.inDrawer
+          && o.open && o.focus && o.expanded === 'true' && o.visible && o.slot === 'Legend' && /scat=/.test(q) && back,
+        JSON.stringify({ r, o, q, back }));
+      await close();
+    }
+    for (const [size, vp] of [['1440', DESKTOP], ['768', { width: 768, height: 1024, touch: true }]]) {
+      // Above compact the legend floats on the map as before; no Legend button.
+      const { page, close } = await open('?legend=open', { viewport: vp });
+      const r = await page.evaluate(() => {
+        const L = document.getElementById('legend');
+        const B = L.getBoundingClientRect(), M = document.getElementById('map-container').getBoundingClientRect();
+        const btn = document.querySelector('.mco-legend-btn');
+        return { floating: L.parentElement.id === 'map-container' && getComputedStyle(L).position === 'absolute', inside: B.left >= M.left && B.bottom <= M.bottom && B.top >= M.top,
+          btn: !btn || btn.hidden || getComputedStyle(btn).display === 'none', slot: !document.querySelector('.mco-legend-slot') || document.querySelector('.mco-legend-slot').hidden };
+      });
+      check(`${tag} ${size}: legend floats on the map, no Legend button or drawer group`, r.floating && r.inside && r.btn && r.slot, JSON.stringify(r));
       await close();
     }
   },
