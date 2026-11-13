@@ -1359,7 +1359,6 @@
     }
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
-    stamp.dataset.peek = '';   // the sheet's peek detent shows down to here
     root.insertBefore(tags, before);
     root.insertBefore(stamp, before);
 
@@ -1407,9 +1406,9 @@
     return frag;
   }
 
-  // ── Station detail: MCO.initSheet at every width (kit 0.21.0) ───────────
-  // End-docked above compact, a bottom sheet (peek, drag/grip to full) on
-  // compact. Stations never open an anchored popup.
+  // ── Station detail: MCO.initSheet at every width ────────────────────────
+  // End-docked above compact; on compact (kit 1.0.0) one full-height panel
+  // under the bar, which stays live. Stations never open an anchored popup.
   const sheetEl    = document.getElementById('station-sheet');
   const sheetTitle = document.getElementById('station-sheet-title');
   const sheetBody  = sheetEl.querySelector('.mco-sheet-body');
@@ -1419,7 +1418,7 @@
     sheet: sheetEl,
     fallbackFocus: document.getElementById('main'),
     onState: (state) => {
-      // Closed by the user (×, Esc, drag down): clear the selection.
+      // Closed by the user (×, Esc, Back): clear the selection.
       if (state === 'closed' && _sheetFor) {
         _sheetFor = null;
         _selectedStation = null;
@@ -1445,7 +1444,7 @@
     _selectedStation = stationId;
     _sheetFor = stationId;
     fillSheet(stationId);
-    sheet.open('peek', { opener: opts && opts.opener });
+    sheet.open({ opener: opts && opts.opener });
     paintSelection();
     renderSRTable();
     announcePopup(stationId);

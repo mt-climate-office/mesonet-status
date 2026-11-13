@@ -464,14 +464,14 @@
     </aside>
   </div>
 
-  <!-- Station detail at every width (MCO.initSheet, kit 0.21.0 rule):
-       end-docked above compact, a bottom sheet with peek / full detents on
-       compact. -->
+  <!-- Station detail at every width (MCO.initSheet): end-docked above
+       compact with the map live; on compact (kit 1.0.0) one full-height
+       panel under the bar, with the bar still live. The close button is the
+       only close on a touch screen (44px at every width, kit 1.0.0). -->
   <section class="mco-sheet" id="station-sheet" aria-labelledby="station-sheet-title" data-state="closed" hidden>
     <div class="mco-sheet-head">
-      <button type="button" class="mco-sheet-grip" aria-label="Expand details" aria-expanded="false"></button>
       <h2 class="mco-sheet-title" id="station-sheet-title" tabindex="-1">Station details</h2>
-      <button type="button" class="modal-close" data-close-sheet aria-label="Close">×</button>
+      <button type="button" class="modal-close" data-close-sheet aria-label="Close station details">×</button>
     </div>
     <div class="mco-sheet-body"></div>
   </section>
