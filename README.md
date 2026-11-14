@@ -18,17 +18,17 @@ Other features:
 
 - **HydroMet / AgriMet** sub-network toggles with live counts. Hiding a network dynamically resolves any stacked sites at that location to single dots.
 - **Search box** with a custom themed dropdown (8 results, scored by relevance), keyboard navigation (`↑` `↓` `Enter`), and a `/` global shortcut to jump to it from anywhere on the page.
-- **Plotly-style interactive legend** in the lower-left: click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. Every row shows the live count and share of the selected networks' stations in that category (label, count, percentage); hiding a category never changes its count.
+- **Plotly-style interactive legend** in the lower-left (on a phone, a Legend group in the ☰ drawer, opened by a Legend button on the map: `MCO.initLegendDrawer`): click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. Every row shows the live count and share of the selected networks' stations in that category (label, count, percentage); hiding a category never changes its count.
 - **Station markers** — one circle for every station (`MCO.map.stationPaint`); HydroMet and AgriMet draw the same, and the network chips show or hide each network.
 - **Co-located sites** (`MCO.map.colocation`) — one marker with a count badge; the HydroMet station is the anchor. Hover (desktop) or tap (mobile) to fan the others out, then click one for its details. A station's details also list the others at its site.
-- **Station details** open in a sheet (`MCO.initSheet`) at every width: docked at the right on desktop, a bottom sheet on phones. Back closes them.
-- **Phone bar** — one row: logo, mode, search and ☰; everything else is in the drawer ☰ opens.
+- **Station details** open in a sheet (`MCO.initSheet`) at every width: docked at the right on desktop and tablet with the map live; on a phone, one full-height panel under the bar, which stays live, closed by its × button. Back closes them.
+- **Phone bar** — one row: logo, mode, search and ☰; everything else is in the drawer ☰ opens. On a short landscape phone the bar is a rail at the right edge (logo, ☰, search), and the mode select is in the drawer.
 - **Toggleable station-ID labels** with collision-based dodging.
 - **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
 - **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
 - **Montana state outline** so the state shape reads as the primary frame.
 - **Dark → light → high-contrast theme** button (high contrast uses the dark basemap) with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
-- **Map controls**: zoom in/out + a "zoom to full extent" button (top-right). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
+- **Map controls**: zoom in/out + a "zoom to full extent" button (top-left). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
 - **First-visit help dialog** auto-opens once (the kit's `intro` option), never over a deep link.
 - Honors `prefers-reduced-motion` and `prefers-color-scheme`.
 
