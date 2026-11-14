@@ -1,126 +1,63 @@
 # Mesonet Station Status
 
-A real-time station status map for the [Montana Mesonet](https://climate.umt.edu/mesonet), built and operated by the [Montana Climate Office](https://climate.umt.edu).
+A map of every Montana Mesonet station, colored by how recently it reported.
 
-## About
+https://mesonet.climate.umt.edu/status/
 
-Shows the current reporting state of every station across the HydroMet and AgriMet sub-networks. Two view modes:
+## Run it
 
-- **Status** — single threshold: dot color reflects whether the station has posted within the last 2 hours.
-- **Time since** — five bins of "minutes since the latest record," ceiling at >24 h.
-- **Health** — four classes. **Operational**: reported within the last 2 hours with every expected sensor present. **Partial — new sensor outage** (`partial`): reported within the 2 hours, but at least one expected sensor is null in the latest record and not flagged. **Partial — known outage** (`known`): every null sensor is a flagged outage from the AirTable Outages table, which QC nulls on purpose. **Total outage**: no report in the last 2 hours, or no record at all. The station details list new outages first, then known ones with the date they were flagged.
-
-In Health mode the legend footer reports sensor-list loading progress and, afterwards, how many fresh stations have no sensor list (those count as operational) or no outage flags (every silent sensor there reads as new).
-
-Color is Crameri's [*roma*](https://www.fabiocrameri.ch/colourmaps/) from the house palette (`MCO.palette`), sampled at 0.1–0.9 and reversed: blue = fresh → pale → brown = stale, held in app.js's role registry. It is perceptually uniform, ordered, and safe for the major color-vision deficiencies, and the two ends differ in lightness, so they survive grayscale. A station with no record is a hollow dot.
-
-Other features:
-
-- **HydroMet / AgriMet** sub-network toggles with live counts. Hiding a network dynamically resolves any stacked sites at that location to single dots.
-- **Search box** with a custom themed dropdown (8 results, scored by relevance), keyboard navigation (`↑` `↓` `Enter`), and a `/` global shortcut to jump to it from anywhere on the page.
-- **Plotly-style interactive legend** in the lower-left (on a phone, a Legend group in the ☰ drawer, opened by a Legend button on the map: `MCO.initLegendDrawer`): click a row to hide/show that category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. Every row shows the live count and share of the selected networks' stations in that category (label, count, percentage); hiding a category never changes its count.
-- **Station markers** — one circle for every station (`MCO.map.stationPaint`); HydroMet and AgriMet draw the same, and the network chips show or hide each network.
-- **Co-located sites** (`MCO.map.colocation`) — one marker with a count badge; the HydroMet station is the anchor. Hover (desktop) or tap (mobile) to fan the others out, then click one for its details. A station's details also list the others at its site.
-- **Station details** open in a sheet (`MCO.initSheet`) at every width: docked at the right on desktop and tablet with the map live; on a phone, one full-height panel under the bar, which stays live, closed by its × button. Back closes them.
-- **Phone bar** — one row: logo, mode, search and ☰; everything else is in the drawer ☰ opens. On a short landscape phone the bar is a rail at the right edge (logo, ☰, search), and the mode select is in the drawer.
-- **Toggleable station-ID labels** with collision-based dodging.
-- **Hover tooltip** with station name, ID, latest timestamp, and relative time — all in the viewer's local timezone.
-- **Tribal lands overlay** — the 7 federal reservations in Montana drawn as a subtle fill + outline, with names at zoom ≥ 7.
-- **Montana state outline** so the state shape reads as the primary frame.
-- **Dark → light → high-contrast theme** button (high contrast uses the dark basemap) with neutral [CARTO Positron / Dark Matter](https://carto.com/basemaps) basemaps designed as data-overlay canvases.
-- **Map controls**: zoom in/out + a "zoom to full extent" button (top-left). Zooming out below the state-fit zoom springs back; resizing the window also snaps back if the viewport drops below fit.
-- **First-visit help dialog** auto-opens once (the kit's `intro` option), never over a deep link.
-- Honors `prefers-reduced-motion` and `prefers-color-scheme`.
-
-## Sharable URLs
-
-Every piece of UI state is mirrored to the URL via `history.replaceState`. The view is fully shareable and bookmarkable.
-
-| Param     | Values                                    | Notes                                         |
-|-----------|-------------------------------------------|-----------------------------------------------|
-| `lng`     | float                                     | Map center longitude. Omitted at the default Montana fit. |
-| `lat`     | float                                     | Map center latitude. Omitted at the default Montana fit. |
-| `zoom`    | float                                     | Map zoom. Omitted at the default Montana fit. |
-| `mode`    | `status` \| `timesince` \| `health`       | Visualization mode                            |
-| `net`     | `+`/space/comma list (`hydromet+agrimet`) | Active sub-networks. Empty = none. Case-insensitive. |
-| `scat`    | list (`fresh+stale`, `null`)              | Visible Status-mode categories. Omitted = all. |
-| `tcat`    | list (`0+1+2+3+4`, `null`)                | Visible Time-since bins (0 = `<2 h`, 4 = `>24 h`). Omitted = all. |
-| `hcat`    | list (`operational+known+partial+outage`) | Visible Health classes. Omitted = all.        |
-| `labels`  | `on` \| `off`                             | Station-ID labels                             |
-| `legend`  | `open` \| `collapsed`                     | Legend panel state                            |
-| `theme`   | `light` \| `dark` \| `high-contrast`       | Theme override. Omitted when it matches the OS preference. |
-| `station` | station id (e.g. `aceabsar`)              | Open this station's details on load; deep-link |
-
-Precedence per setting: URL param > `localStorage` > built-in default.
-
-All enum-string values (`mode`, `theme`, `labels`, `legend`, network names, category keys, station IDs) are matched **case-insensitively**. List params accept `+`, spaces, or commas as separators.
-
-Examples:
-
-```
-/?station=aceabsar
-/?station=aceabsar&lng=-109.61&lat=45.56&zoom=12
-/?mode=timesince&net=agrimet&theme=light&labels=on&legend=collapsed
-/?net=hydromet+agrimet&scat=fresh+stale
-```
-
-## Data sources
-
-- Stations + metadata: <https://mesonet2.climate.umt.edu/api/stations/?type=json>
-- Latest record per station: <https://mesonet2.climate.umt.edu/api/latest/?type=json>
-- Expected elements (sensors) for the whole network: <https://mesonet2.climate.umt.edu/api/elements/?all=true&type=json> (one request; rows carry a `station` column and an `outages` column, below). If the API doesn't serve `all` yet, it ignores the flag and returns the bare catalog, which the app detects by the missing `station` column and falls back to the per-station form `https://mesonet2.climate.umt.edu/api/elements/<station>/?type=json` (e.g. <https://mesonet2.climate.umt.edu/api/elements/acemidwa/?type=json>). Without `type=json` the endpoints return HTML; per-station rows are duplicated and are de-duplicated by `element`.
-
-**Health** cross-references the two: an expected element whose `description_short` column (`"<description_short> [<unit>]"`) is null in the station's latest record counts as a sensor not reporting. The element lists are fetched once (one bulk request, or 8 concurrent per-station requests on the fallback path, ~10 s cold for the full network) and cached in `localStorage` under `mco-status-elements-v2`, so a reload paints Health from cache immediately. Lists from the bulk request expire after 1 h, because they carry outage windows; per-station lists expire after 24 h. An expired list is refetched on the 5-minute poll and stays on the map until its replacement arrives.
-
-**Known vs. new outages.** Each bulk row's `outages` lists every open registration behind the element as `{serial_number, ranges}`. The ranges are the AirTable outage windows: `[start]` (ongoing) or `[start, end]`, whole America/Denver days, inclusive. A null element is a *known* outage only when **every** registration has a window covering today in Mountain Time. At a dual-chain soil depth with one chain flagged, the other chain still reports into the combined element, so a null there is news. Without the column (older API, or the per-station fallback) every null counts as new. Clear that key (or the site's storage) to force a refetch. Stations whose list fails to load are counted as operational when fresh and called out in the panel footer.
-
-All API reads go to `mesonet2.climate.umt.edu` (the page CSP's `connect-src` pins that host). The per-station dashboard link stays on `mesonet.climate.umt.edu/dash/`.
-
-The latest endpoint is polled every 5 minutes. Each response is **merged** into our in-memory store rather than replacing it — the Mesonet API occasionally drops a (different) station per call, and merging keeps a station's last-known timestamp from flickering to "no record" between polls. If a station genuinely stops reporting, its timestamp just ages naturally into the very-stale bin. Dot colors are also refreshed every 30 seconds against the local clock so freshness stays current between API calls.
-
-Static overlay GeoJSON files in `data/` (state, reservations, counties) are built by `data.R` from `tigris` + `rmapshaper` and checked into the repo so the app has zero runtime dependencies beyond the Mesonet API.
-
-## Development
-
-The app is a single static `index.html` with no build step. Serve it locally with any static server:
+No build step. Serve the folder and open http://localhost:8000.
 
 ```sh
-# Python
 python -m http.server 8000
-
-# Node
-npx serve .
 ```
 
-Open <http://localhost:8000>.
+## Deploy
 
-## Deployment
+GitHub Pages publishes `main`. The production host proxies `/status/` to Pages.
+A nightly workflow commits `assets/og-card.png` to `main`, so pull before you push.
 
-Published via [GitHub Pages](https://pages.github.com) from the `main` branch. To enable for a fresh fork:
+## URL parameters
 
-1. Push to `main`.
-2. Repo → Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main / (root)**.
-3. Site goes live at `https://<owner>.github.io/mesonet-status/` within a minute or two. Add a `CNAME` file later if you want a custom subdomain.
+Values are case-insensitive. Lists take `+`, spaces or commas.
 
-### Social preview image
+| Parameter | Values | What it does |
+|---|---|---|
+| `station` | station id, e.g. `aceabsar` | Opens that station's details |
+| `mode` | `status`, `timesince`, `health` | Map mode |
+| `net` | `hydromet`, `agrimet` (list) | Networks shown |
+| `scat` | `fresh`, `stale`, `null` (list) | Status categories shown |
+| `tcat` | `0` to `4`, `null` (list) | Time-since bins shown, `0` is under 2 h |
+| `hcat` | `operational`, `known`, `partial`, `outage` (list) | Health categories shown |
+| `lng`, `lat`, `zoom` | numbers | Map view |
+| `labels` | `on`, `off` | Station id labels |
+| `legend` | `open`, `collapsed` | Legend panel |
+| `theme` | `dark`, `light`, `high-contrast` | Theme |
+| `kbd` | `off` | Turns off the `/` shortcut |
 
-`.github/workflows/preview.yml` runs nightly (and on manual dispatch) and **commits `assets/og-card.png` back to `main`** — always pull/rebase before pushing, or you race it.
+## Data
 
-`scripts/generate_preview.py` screenshots the live Pages site at 2400×1260 (a 1200×630 viewport at 2×) with `?mode=status`, which pins the Status view and, as a deep link, keeps the first-visit help dialog closed. It waits for the `#refresh-stamp` text to read `Updated …` and then 4 seconds for tiles to paint — that param, element id and stamp text are a contract with the script. Run it locally to check:
+- Stations: https://mesonet2.climate.umt.edu/api/stations/?type=json
+- Latest record, polled every 5 minutes: https://mesonet2.climate.umt.edu/api/latest/?type=json
+- Expected sensors and flagged outages: https://mesonet2.climate.umt.edu/api/elements/?all=true&type=json
+- Per-station fallback when `all=true` is not served: `https://mesonet2.climate.umt.edu/api/elements/<station>/?type=json`
+- State, reservation and county outlines in `data/`, built by `data.R`.
+
+Each poll is merged into the stored records, because the latest endpoint sometimes drops a station.
+Sensor lists are cached in `localStorage` as `mco-status-elements-v2`. Clear it to force a refetch.
+
+## Tests
+
+From an `mco-web-style` checkout beside this repo:
 
 ```sh
-pip install playwright
-playwright install --with-deps chromium
-python scripts/generate_preview.py
+node tools/verify/head.mjs       --root ../mesonet-status
+node tools/verify/axe-matrix.mjs --config ../mesonet-status/verify.config.mjs
+node tools/verify/keyboard.mjs   --config ../mesonet-status/verify.config.mjs
+node tools/conformance.mjs ../mesonet-status
 ```
 
-## Tooling
+## Kit
 
-- [MapLibre GL JS](https://maplibre.org) v6.11.2 via CDN (imported by mco-web-style's `MCO.map.loadMapLibre()`; SRI in the import map).
-- [mco-web-style](https://github.com/mt-climate-office/mco-web-style) 0.16.2 (pinned + SRI).
-- [CARTO Basemaps](https://carto.com/basemaps) Positron + Dark Matter (neutral data-vis backdrops, free, no API key).
-- Vanilla JS / HTML / CSS — no bundler, no framework.
-
-## License
-
-[MIT](LICENSE) — Copyright (c) 2026–present Montana Climate Office
+`mco-web-style` 1.0.0.
+Design rules: mco-web-style/HOUSE-STYLE.md
