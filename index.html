@@ -496,44 +496,49 @@
     <div class="info-modal-header">
       <div>
         <h2 class="info-modal-title" id="info-modal-title">Mesonet Station Status</h2>
-        <p class="info-modal-subtitle">Live reporting status for the Montana Mesonet network</p>
       </div>
       <button type="button" class="modal-close" aria-label="Close" data-close-modal>×</button>
     </div>
 
     <div class="info-section">
       <h3>What this shows</h3>
-      <p>Every Montana Mesonet station, colored by how recently it reported. Three modes:</p>
+      <p>Every Montana Mesonet station, colored by how recently it reported.</p>
       <ul>
-        <li><strong>Status</strong>: reported in the last 2 hours, or stale (2 hours or more).</li>
-        <li><strong>Time since</strong>: 5 bins from under 2 hours to over 24 hours.</li>
-        <li><strong>Health</strong>: <strong>Operational</strong> reported in the last 2 hours with every expected sensor present. <strong>Partial — new sensor outage</strong> reported, but one or more sensors are silent and not yet flagged. <strong>Partial — known outage</strong> reported, and every silent sensor is a flagged outage (staff have logged it and its data is withheld). The station's details list both, news first. <strong>Total outage</strong> has not reported in the last 2 hours.</li>
+        <li><strong>Status:</strong> reported in the last 2 hours, or not.</li>
+        <li><strong>Time since:</strong> time since the last report.</li>
+        <li><strong>Health:</strong> whether every expected sensor is reporting.</li>
       </ul>
-      <p>A hollow dot has no record. HydroMet and AgriMet stations draw the same; the network chips show or hide each network.</p>
+      <p>A hollow dot has no record. A numbered dot is several stations at one site.</p>
+      <details>
+        <summary>What the Health categories mean</summary>
+        <ul>
+          <li><strong>Operational:</strong> reported in the last 2 hours with every sensor.</li>
+          <li><strong>Partial — new sensor outage:</strong> a sensor is silent and not yet flagged.</li>
+          <li><strong>Partial — known outage:</strong> every silent sensor is a flagged outage.</li>
+          <li><strong>Total outage:</strong> no report in the last 2 hours.</li>
+        </ul>
+      </details>
     </div>
 
     <div class="info-section">
       <h3>How to use it</h3>
       <ul>
-        <li><strong>Mode</strong>: pick Status, Time since or Health in the bar.</li>
-        <li><strong>Legend</strong>: every row shows how many of the selected networks' stations fall in that category, and the share. Click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. On a phone the legend is in the ☰ menu, and the Legend button on the map opens it there.</li>
-        <li><strong>Networks</strong>: the chips show or hide HydroMet and AgriMet.</li>
-        <li><strong>Search</strong>: press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> and <kbd>Enter</kbd> to pick.</li>
-        <li><strong>Stations</strong>: hover a dot for the time since its last report; click or tap it for its details and a dashboard link.</li>
-        <li><strong>Numbered dots</strong>: more than one station shares that site. Hover or tap to fan them out, then pick one. A station's details list the others at its site.</li>
-        <li><kbd>Esc</kbd> closes the details, then the fan-out.</li>
-        <li>Single-key shortcuts can be turned off by adding <code>?kbd=off</code> to the URL (it sticks while you browse).</li>
+        <li>Pick a mode in the bar.</li>
+        <li>Tap a station for its details and a dashboard link.</li>
+        <li>Tap a legend row to hide that category. Double-tap to show only it.</li>
+        <li>Tap <strong>HydroMet</strong> or <strong>AgriMet</strong> to show or hide that network.</li>
+        <li>Keys: <kbd>/</kbd> search, <kbd>Esc</kbd> close. Add <code>?kbd=off</code> to the address to turn off <kbd>/</kbd>.</li>
       </ul>
     </div>
 
     <div class="info-section">
       <h3>Share or bookmark</h3>
-      <p>The URL reflects every choice; copy it from the address bar. <code>?station=&lt;id&gt;</code> opens one station's details, and Back closes them. Times are Mountain Time.</p>
+      <p>The address holds this view. Copy it to share. Times are Mountain Time.</p>
     </div>
 
     <div class="info-section">
       <h3>Data</h3>
-      <p>Stations and their latest records come from the Montana Mesonet API, polled every 5 minutes. Health compares each station's latest record with its list of expected sensors. "Updated" is the time of the newest record.</p>
+      <p><a href="https://mesonet2.climate.umt.edu/api/v2/docs" target="_blank" rel="noopener noreferrer">Montana Mesonet API</a>, checked every 5 minutes.</p>
       <p class="info-credit" id="info-credit"></p>
     </div>
   </div>
