@@ -394,7 +394,7 @@
       onMapFail(err);
       return;
     }
-    MCO.map.addNavigation(map);                                     // top-right, no compass
+    MCO.map.addNavigation(map);                                     // top-left (kit 1.0.0), no compass
     MCO.map.addFitControl(map, { onBeforeFit: () => coloc && coloc.close() });
     zoomFloor = MCO.map.installZoomFloor(map);                      // snapback + resize refit
     // The legend clears the attribution (index.html #legend): publish the
@@ -1247,11 +1247,11 @@
     onSelect: (id) => selectStation(id),
   });
 
-  // ── Phone bar (kit 0.21.0 compact drawer) + landscape rail (0.10.0) ─────
+  // ── Phone bar (kit 0.21.0 compact drawer) + landscape rail (1.0.0) ──────
   // data-rail="compact": on a portrait phone the bar is one row (badge ·
   // mode select · search · ☰) and ☰ opens the brand, controls and meta as a
-  // right drawer; on a landscape phone the bar is the 56px rail with the
-  // same drawer beside it. Either way, while the drawer is open the rest of
+  // right drawer; on a short landscape phone the bar is the 56px rail at the
+  // right edge with the same drawer beside it. Either way, while the drawer is open the rest of
   // the page (and the rest of the bar) is inert, and Esc / the scrim / ☰
   // close it with focus back on the button that opened it. The bar's search
   // button opens the drawer on the field (the kit's search option).
@@ -1263,9 +1263,15 @@
     search: { toggle: railSearchBtn, input: searchInput },
   });
   const inDrawer = () => rail.isRail() || rail.isDrawerMode();
-  // The info dialog would open under an inert page: close the drawer first
-  // (capture, so it runs before the kit's own opener).
-  btnInfo.addEventListener('click', () => rail.close({ restoreFocus: false }), true);
+  // The legend on a phone (kit 1.0.0, Kyle 2026-11-12): on compact the
+  // floating legend moves into a "Legend" group at the end of the ☰ drawer,
+  // and a small Legend button takes its corner on the map and opens the
+  // drawer at it. Above compact it floats as before. The panel moves with
+  // its collapse and row toggles.
+  MCO.initLegendDrawer({ panel: document.getElementById('legend'), rail });
+  // The info button sits in the drawer on a phone. The kit (1.0.0) keeps a
+  // dialog opened from the open drawer usable and returns focus to the
+  // button, so the drawer stays open under it.
 
   function selectStation(stationId) {
     // Picking from the drawer: close it and let the detail take focus; the
@@ -1359,7 +1365,6 @@
     }
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
-    stamp.dataset.peek = '';   // the sheet's peek detent shows down to here
     root.insertBefore(tags, before);
     root.insertBefore(stamp, before);
 
@@ -1407,9 +1412,9 @@
     return frag;
   }
 
-  // ── Station detail: MCO.initSheet at every width (kit 0.21.0) ───────────
-  // End-docked above compact, a bottom sheet (peek, drag/grip to full) on
-  // compact. Stations never open an anchored popup.
+  // ── Station detail: MCO.initSheet at every width ────────────────────────
+  // End-docked above compact; on compact (kit 1.0.0) one full-height panel
+  // under the bar, which stays live. Stations never open an anchored popup.
   const sheetEl    = document.getElementById('station-sheet');
   const sheetTitle = document.getElementById('station-sheet-title');
   const sheetBody  = sheetEl.querySelector('.mco-sheet-body');
@@ -1419,7 +1424,7 @@
     sheet: sheetEl,
     fallbackFocus: document.getElementById('main'),
     onState: (state) => {
-      // Closed by the user (×, Esc, drag down): clear the selection.
+      // Closed by the user (×, Esc, Back): clear the selection.
       if (state === 'closed' && _sheetFor) {
         _sheetFor = null;
         _selectedStation = null;
@@ -1445,7 +1450,7 @@
     _selectedStation = stationId;
     _sheetFor = stationId;
     fillSheet(stationId);
-    sheet.open('peek', { opener: opts && opts.opener });
+    sheet.open({ opener: opts && opts.opener });
     paintSelection();
     renderSRTable();
     announcePopup(stationId);

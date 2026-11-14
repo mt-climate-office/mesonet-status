@@ -34,9 +34,9 @@
        decided 2026-10-08) so they version with the kit and can't drift; the
        navbar logo stays vendored (assets/mco-logo.png). img-src allows
        cdn.jsdelivr.net for these. -->
-  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/apple-touch-icon.png">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
        og-card.png is this app's OWN card — a live screenshot regenerated
@@ -95,8 +95,8 @@
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
        (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
        entry + shared chunk and must precede any module load. Copied byte for
@@ -114,8 +114,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/theme/mco-theme.css"
-        integrity="sha384-6b+8YTXHtiLQOLwPSXvqmgnA4QlUZ87oGCr9kwLwAHCTV+oDPCkM0IK6mve/4BeY"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/theme/mco-theme.css"
+        integrity="sha384-sYr4fDiezV2VCn92FyWqmM9kKbbJPMUCqf7xIkQqLyFlSbMmWCTGdAzNPlm6cJ65"
         crossorigin="anonymous">
 
   <style>
@@ -204,7 +204,9 @@
          bottom-right control box's measured height as --attrib-h, so the
          legend sits 4px above it (and drops back when the attribution
          collapses to its ⓘ). On a wide map the single-line attribution
-         measures ~32px, so this stays the 36px it always was. */
+         measures ~32px, so this stays the 36px it always was. On a phone the
+         legend lives in the ☰ drawer and the kit's Legend button takes its
+         corner (MCO.initLegendDrawer, kit 1.0.0). */
       bottom: max(36px, calc(var(--attrib-h, 0px) + 4px), calc(12px + env(safe-area-inset-bottom)));
       transition: bottom var(--transition);
       left: 12px;
@@ -306,9 +308,9 @@
       border: 1px solid var(--ctrl-border); border-radius: var(--radius-md);
       font: inherit; font-size: 0.8rem;
     }
-    /* The landscape rail is a 56px column: a select doesn't fit there, and
-       the drawer beside it carries the same control. Matches the kit's
-       RAIL_MQ (MCO.viewport). */
+    /* The landscape rail (at the right edge, kit 1.0.0) is a 56px column: a
+       select doesn't fit there, and the ☰ drawer beside it carries the same
+       control (the mode select). Matches the kit's RAIL_MQ (MCO.viewport). */
     @media (max-height: 560px) and (orientation: landscape) {
       /* kit-override: the rail column holds buttons only. */
       .mco-rail .mode-select { display: none; }
@@ -323,9 +325,11 @@
 <!-- data-rail="compact" (kit 0.21.0): on a portrait phone the bar is one
      row (badge · mode select · search · ☰) and the brand, controls and meta
      open from ☰ as a right drawer (.mco-nav-drawer, MCO.initNavRail); on a
-     landscape phone it is the 56px left rail (kit 0.10.0). Above compact
-     .mco-rail is hidden and the drawer is display:contents, so the desktop
-     bar is unchanged. -->
+     short landscape phone it is the 56px rail at the RIGHT edge (kit 1.0.0:
+     badge, ☰, search), with the same drawer opening beside it. Above
+     compact .mco-rail is hidden and the drawer is display:contents, so the
+     desktop bar is unchanged. This app has no time controls, so no
+     .mco-controlbar. -->
 <header id="navbar" class="mco-navbar" data-rail="compact">
   <a href="https://climate.umt.edu" target="_blank" rel="noopener noreferrer"
      class="logo-link" aria-label="Montana Climate Office">
@@ -464,14 +468,14 @@
     </aside>
   </div>
 
-  <!-- Station detail at every width (MCO.initSheet, kit 0.21.0 rule):
-       end-docked above compact, a bottom sheet with peek / full detents on
-       compact. -->
+  <!-- Station detail at every width (MCO.initSheet): end-docked above
+       compact with the map live; on compact (kit 1.0.0) one full-height
+       panel under the bar, with the bar still live. The close button is the
+       only close on a touch screen (44px at every width, kit 1.0.0). -->
   <section class="mco-sheet" id="station-sheet" aria-labelledby="station-sheet-title" data-state="closed" hidden>
     <div class="mco-sheet-head">
-      <button type="button" class="mco-sheet-grip" aria-label="Expand details" aria-expanded="false"></button>
       <h2 class="mco-sheet-title" id="station-sheet-title" tabindex="-1">Station details</h2>
-      <button type="button" class="modal-close" data-close-sheet aria-label="Close">×</button>
+      <button type="button" class="modal-close" data-close-sheet aria-label="Close station details">×</button>
     </div>
     <div class="mco-sheet-body"></div>
   </section>
@@ -512,7 +516,7 @@
       <h3>How to use it</h3>
       <ul>
         <li><strong>Mode</strong>: pick Status, Time since or Health in the bar.</li>
-        <li><strong>Legend</strong>: every row shows how many of the selected networks' stations fall in that category, and the share. Click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it.</li>
+        <li><strong>Legend</strong>: every row shows how many of the selected networks' stations fall in that category, and the share. Click a row to hide a category; double-click (or <kbd>Shift</kbd>+<kbd>Enter</kbd>) to isolate it. On a phone the legend is in the ☰ menu, and the Legend button on the map opens it there.</li>
         <li><strong>Networks</strong>: the chips show or hide HydroMet and AgriMet.</li>
         <li><strong>Search</strong>: press <kbd>/</kbd> to jump there; <kbd>↑</kbd>/<kbd>↓</kbd> and <kbd>Enter</kbd> to pick.</li>
         <li><strong>Stations</strong>: hover a dot for the time since its last report; click or tap it for its details and a dashboard link.</li>
@@ -537,16 +541,16 @@
 
 <!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
      app.js waits on MCO.map.loadMapLibre(). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/core/mco-core.js"
-        integrity="sha384-xNdr9/kMYOXBLa6aHuU637Nln0S73l6QjvB9Ld7vqCvwcqZ6wzs69YziKejo8M3w"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/core/mco-core.js"
+        integrity="sha384-D7xlWfDfWcrBYM29SxNSZ9sjoFbu9VmboXzztcMMqsSm10bhGta1w4i7Q/mveU3A"
         crossorigin="anonymous"></script>
 <!-- mco-palette.js before mco-map.js: this app colors station markers, and
      MCO.map.markerPaint() reads MCO.palette (kit 0.9.0). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/palette/mco-palette.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/palette/mco-palette.js"
         integrity="sha384-bMyfpU5iEKAQiHDJZLqmCMt3sTGm+HBi2GIY7I9xLyV+JYrbGgHOX9+/XVXy8CYV"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@0.21.2/map/mco-map.js"
-        integrity="sha384-8ZLN6Xhnts1kIMbDa9M+H05sYgu770WLohBOrch1nTafMd+HEM7PlrP0e4fCoRb8"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/map/mco-map.js"
+        integrity="sha384-eWrG2T3udOw4ET+hy7Sq0BR/c4jCKD2+Cy4TEV2m4Dd6BL5VXGZXS2n8B8y+8v4z"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
 </body>
