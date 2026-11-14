@@ -45,6 +45,8 @@ Values are case-insensitive. Lists take `+`, spaces or commas.
 
 Each poll is merged into the stored records, because the latest endpoint sometimes drops a station.
 Sensor lists are cached in `localStorage` as `mco-status-elements-v2`. Clear it to force a refetch.
+Station details link to the dashboard at `https://mesonet2.climate.umt.edu/dash/?s=<id>`.
+Cutover: change `MESONET_ORIGIN` in `app.js` and the CSP `connect-src`.
 
 ## Tests
 

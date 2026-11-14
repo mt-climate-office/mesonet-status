@@ -8,13 +8,16 @@
   'use strict';
 
   // ── Constants ────────────────────────────────────────────────────────────
-  // All API reads go to mesonet2 (the CSP connect-src in index.html must
-  // match). The dashboard is a page link, not a fetch, and stays on the old
-  // host: mesonet2's /dash/ 301s to the Pages dashboard and drops the id.
-  const API_BASE        = 'https://mesonet2.climate.umt.edu/api';
+  // The Mesonet host for the dashboard and the API. At the cutover this becomes
+  // 'https://mesonet.climate.umt.edu'. Change it here, and in the CSP and README.
+  const MESONET_ORIGIN  = 'https://mesonet2.climate.umt.edu';
+  // The unversioned routes this app has always called (the CSP connect-src
+  // in index.html must allow MESONET_ORIGIN).
+  const API_BASE        = `${MESONET_ORIGIN}/api`;
+  const API_DOCS_URL    = `${MESONET_ORIGIN}/api/v2/docs`;
   const STATIONS_URL    = `${API_BASE}/stations/?type=json`;
   const LATEST_URL      = `${API_BASE}/latest/?type=json`;
-  const DASH_URL        = (s) => `https://mesonet.climate.umt.edu/dash/${encodeURIComponent(s)}`;
+  const DASH_URL        = (s) => `${MESONET_ORIGIN}/dash/?s=${encodeURIComponent(s)}`;
   const LATEST_FOR_URL  = (s) => `${API_BASE}/latest/?stations=${encodeURIComponent(s)}`;
   // Expected elements (sensors) per station. Returns HTML without type=json.
   // The bulk form (?all=true, mesonet-db-rds PR #175) answers for every
@@ -159,6 +162,8 @@
     intro: { key: 'mco-status-seen-intro', skip: hasDeepLink, defer: true },
   });
   document.getElementById('info-credit').textContent = MCO.credit({ source: 'Montana Mesonet' });
+  // The API docs link in the help is built from MESONET_ORIGIN, not typed.
+  Object.assign(document.getElementById('api-docs-link'), { href: API_DOCS_URL, target: '_blank', rel: 'noopener noreferrer' });
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   // Absolute stamps are Mountain Time (house convention: every MCO product
