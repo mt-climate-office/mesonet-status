@@ -454,17 +454,23 @@ export default {
         r.floating && r.inside && r.overlap === 0 && r.blocked.length === 0 && r.btn && r.slot, JSON.stringify(r));
       await close();
     }
-    for (const vp of [PHONE, { width: 844, height: 390, touch: true }]) {
-      // The info button lives in the ☰ drawer on a phone. Opened from the
-      // open drawer (kit 1.0.0), the dialog is live with focus inside; Esc
-      // closes it with focus back on the info button in the still-open
-      // drawer; a second Esc closes the drawer back to ☰. Activated from the
-      // keyboard: WebKit does not focus a clicked button, so a pointer
-      // opener there is whatever held focus before (the kit's rule).
+    for (const vp of [{ width: 320, height: 568, touch: true }, PHONE, { width: 844, height: 390, touch: true }]) {
+      // The help button is a bar tool, named "Help": in the bar at 390 and in
+      // the rail at 844×390, and in the ☰ drawer only where the bar has no
+      // room for it. Opened from the open drawer, the dialog is live with
+      // focus inside; Esc closes it with focus back on the button in the
+      // still-open drawer; a second Esc closes the drawer back to ☰.
+      // Activated from the keyboard: WebKit does not focus a clicked button,
+      // so a pointer opener there is whatever held focus before (the kit's
+      // rule).
       const size = `${vp.width}×${vp.height}`;
       const { page, close } = await open('', { viewport: vp });
-      await page.click('#btn-rail-menu');
-      await page.waitForTimeout(400);
+      const h = await page.evaluate(() => { const el = document.getElementById('btn-info');
+        return { name: el.getAttribute('aria-label'), drawer: !!el.closest('.mco-nav-drawer'), tools: document.getElementById('navbar').dataset.tools }; });
+      if (h.drawer) {
+        await page.click('#btn-rail-menu');
+        await page.waitForTimeout(400);
+      }
       await page.focus('#btn-info');
       await page.keyboard.press('Enter');
       await page.waitForTimeout(500);
@@ -478,11 +484,14 @@ export default {
       await page.waitForTimeout(500);
       const b = await page.evaluate(() => ({ open: document.getElementById('info-modal').open, focus: document.activeElement?.id,
         drawer: document.getElementById('nav-drawer').classList.contains('is-open') }));
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(400);
+      if (h.drawer) {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+      }
       const c = await page.evaluate(() => ({ drawer: document.getElementById('nav-drawer').classList.contains('is-open'), focus: document.activeElement?.id }));
-      check(`${tag} ${size}: info dialog from the open drawer is live (${JSON.stringify(a)}); Esc → ${JSON.stringify(b)}; Esc → ${JSON.stringify(c)}`,
-        a.open && a.focusIn && !a.inert && a.closeHit && !b.open && b.focus === 'btn-info' && b.drawer && !c.drawer && c.focus === 'btn-rail-menu');
+      check(`${tag} ${size}: "${h.name}" in the ${h.drawer ? 'drawer' : 'bar'} (data-tools ${h.tools}) opens a live dialog (${JSON.stringify(a)}); Esc → ${JSON.stringify(b)}${h.drawer ? `; Esc → ${JSON.stringify(c)}` : ''}`,
+        h.name === 'Help' && (vp.width === 320 || !h.drawer) && a.open && a.focusIn && !a.inert && a.closeHit && !b.open && b.focus === 'btn-info'
+          && b.drawer === h.drawer && !c.drawer && c.focus === (h.drawer ? 'btn-rail-menu' : 'btn-info'));
       await close();
     }
   },
