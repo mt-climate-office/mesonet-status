@@ -305,6 +305,8 @@ export default {
       await ctx.route('**/api/stations/?type=json', (r) => (n++ ? r.continue() : r.fulfill({ status: 503, body: '' })));
       const page = await ctx.newPage();
       await page.goto(env.base);
+      const text = await page.textContent('.mco-notice-text', { timeout: 60000 }).catch(() => '');
+      check(`${tag} failed first load: the notice gives no error code (${JSON.stringify(text)})`, text.endsWith('Station data failed to load. Trying again every 5 minutes.'));
       await page.click('.mco-notice button:text("Retry")', { timeout: 60000 }).catch(() => {});
       await page.waitForFunction(rows, null, { timeout: 60000 }).catch(() => {});
       const r = await page.evaluate(() => ({ rows: document.querySelectorAll('#sr-station-table tbody tr').length,

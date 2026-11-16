@@ -759,7 +759,7 @@
       if (!_loadNotice) {
         _loadNotice = MCO.notice({
           tone: 'danger',
-          text: `Station data failed to load (${err.message}). Trying again every ${LATEST_REFRESH_MS / 60000} minutes.`,
+          text: `Station data failed to load. Trying again every ${LATEST_REFRESH_MS / 60000} minutes.`,
           container: map.getContainer(), place: 'over',
           action: { label: 'Retry', onClick: () => { _loadNotice.close(); loadAll(); } },
           onClose: () => { _loadNotice = null; },
