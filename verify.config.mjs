@@ -297,6 +297,23 @@ export default {
       check(`${tag} intro: opens once on a plain visit (focus on close), not over ?station= (${JSON.stringify({ a, b })})`,
         a.open && a.focus && a.seen === '1' && !b.open && b.seen === null);
     }
+    {
+      // A failed first load offers Retry; a success fills the map and clears the notice.
+      const ctx = await env.browser.newContext();
+      await ctx.addInitScript(() => localStorage.setItem('mco-status-seen-intro', '1'));
+      let n = 0;
+      await ctx.route('**/api/stations/?type=json', (r) => (n++ ? r.continue() : r.fulfill({ status: 503, body: '' })));
+      const page = await ctx.newPage();
+      await page.goto(env.base);
+      const text = await page.textContent('.mco-notice-text', { timeout: 60000 }).catch(() => '');
+      check(`${tag} failed first load: the notice gives no error code (${JSON.stringify(text)})`, text.endsWith('Station data failed to load. Trying again every 5 minutes.'));
+      await page.click('.mco-notice button:text("Retry")', { timeout: 60000 }).catch(() => {});
+      await page.waitForFunction(rows, null, { timeout: 60000 }).catch(() => {});
+      const r = await page.evaluate(() => ({ rows: document.querySelectorAll('#sr-station-table tbody tr').length,
+        notices: document.querySelectorAll('.mco-notice').length, stamp: document.getElementById('refresh-stamp').textContent.trim() }));
+      check(`${tag} failed first load: Retry loads it and clears the notice (${JSON.stringify(r)})`, r.rows > 100 && !r.notices && /^Updated /.test(r.stamp));
+      await ctx.close();
+    }
     for (const vp of [{ width: 844, height: 390, touch: true }, { width: 750, height: 342, touch: true }]) {
       // Short landscape phone (kit 1.0.0): the bar is a 56px rail at the
       // RIGHT edge (badge, ☰, search), every rail button ≥ 44px and the

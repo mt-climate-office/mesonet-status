@@ -290,6 +290,10 @@
   // (MCO.map.colocation, kit 0.21.0), created with the map in initMap.
   let coloc = null;
   let _mapReady = false;
+  // Until the first full load succeeds, every refresh retries it.
+  let _loaded = false;
+  let _loading = false;
+  let _loadNotice = null;
   // Cached static overlay FeatureCollections — fetched once, reused across
   // every setStyle() (the source is re-added but data stays in memory).
   let _tribalFC   = null;
@@ -709,6 +713,8 @@
   // MCO.fetchJSON: 60 s AbortSignal timeout; cache:'no-store' because this is
   // a polling app — a cached /latest/ defeats the whole point.
   async function loadAll() {
+    if (_loading) return;
+    _loading = true;
     try {
       const [st, latest] = await Promise.all([
         MCO.fetchJSON(STATIONS_URL, { cache: 'no-store' }),
@@ -726,7 +732,7 @@
       rebuildSource();
       applyAllFilters();   // re-apply now that activeNetworks is populated
       refreshStamp();
-      // Deep-link from ?station=… in URL. loadAll() is only called from the
+      // Deep-link from ?station=… in URL. loadAll() runs only after the
       // map's first style.load, so _mapReady is always true here. It always
       // opens the sheet (MCO.map.flyToAndOpen), replacing this entry: the
       // page's own entry is never history.back()'d off the site.
@@ -744,10 +750,24 @@
       // anti-flash snippet's mco-booting hold (kit 0.9.0; it times out at 3 s
       // regardless).
       MCO.ready();
+      _loaded = true;
+      if (_loadNotice) _loadNotice.close();
     } catch (err) {
       console.error(err);
-      MCO.showToast(`Error loading data: ${err.message}`);
+      // One notice while the failure lasts, so a retry every interval is not
+      // announced again.
+      if (!_loadNotice) {
+        _loadNotice = MCO.notice({
+          tone: 'danger',
+          text: `Station data failed to load. Trying again every ${LATEST_REFRESH_MS / 60000} minutes.`,
+          container: map.getContainer(), place: 'over',
+          action: { label: 'Retry', onClick: () => { _loadNotice.close(); loadAll(); } },
+          onClose: () => { _loadNotice = null; },
+        });
+      }
       MCO.ready();
+    } finally {
+      _loading = false;
     }
     // The first-visit intro, once the page has settled (kit rules: never
     // over a deep link, never once the visitor has moved focus).
@@ -755,6 +775,7 @@
   }
 
   async function refreshLatest() {
+    if (!_loaded) return loadAll();
     try {
       const latest = await MCO.fetchJSON(LATEST_URL, { cache: 'no-store' });
       ingestLatest(latest);
