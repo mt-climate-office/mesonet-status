@@ -15,7 +15,7 @@
     style-src 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
     font-src https://cdn.jsdelivr.net;
     img-src 'self' data: blob: https://cdn.jsdelivr.net;
-    connect-src 'self' https://mesonet2.climate.umt.edu https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://s3.amazonaws.com;
+    connect-src 'self' https://mesonet2.climate.umt.edu https://data2.climate.umt.edu https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://s3.amazonaws.com;
     base-uri 'none';
     form-action 'none'">
 
@@ -134,6 +134,7 @@
       --status-fresh:   #1e5fac;  /* roma blue (bin 0) */
       --status-known:   #4bb2ce;  /* roma cyan (bin 1) — Health "known outage" */
       --status-partial: #c0eac3;  /* roma pale middle (bin 2) — Health "partial" (new) */
+      --status-silent:  #c1a545;  /* roma ochre (bin 3) — Power "feed silent" */
       --status-stale:   #984e14;  /* roma brown (bin 4) */
       --status-null:    #9aa3b3;
     }
@@ -259,6 +260,13 @@
     .pop-pill.known       { background: var(--status-known);   color: #1a1a2e; }
     .pop-pill.partial     { background: var(--status-partial); color: #1a1a2e; }
     .pop-pill.outage      { background: var(--status-stale);   color: #fff; }
+    /* Power pills: OK, Low and Critical reuse bins 0, 2 and 4 (white 6.39:1,
+       #1a1a2e 12.83:1, white 6.11:1, as above). Silent is bin 3, the roma
+       ochre: #1a1a2e on it 7.10:1 (#fff would be 2.40:1). */
+    .pop-pill.power-ok       { background: var(--status-fresh);   color: #fff; }
+    .pop-pill.power-low      { background: var(--status-partial); color: #1a1a2e; }
+    .pop-pill.power-silent   { background: var(--status-silent);  color: #1a1a2e; }
+    .pop-pill.power-critical { background: var(--status-stale);   color: #fff; }
     .pop-siblings { margin-top: 10px; }
     .pop-siblings h3 {
       margin: 0 0 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);
@@ -276,6 +284,22 @@
       line-height: 1.45;
     }
     .pop-missing-note { font-style: italic; color: var(--text-muted); }
+    /* The latest power record (app.js powerBlock): label/value pairs, the
+       reasons behind the class, and the Power data button. */
+    .pop-power {
+      margin-top: 8px; padding: 6px 8px;
+      background: var(--bg-raised); border-radius: var(--radius-sm);
+      font-size: 0.75rem; color: var(--text-secondary);
+    }
+    .pop-power h3 { margin: 0 0 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-primary); }
+    .pop-power dl {
+      margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px;
+    }
+    /* --text-secondary, not --text-muted: muted on --bg-raised fails 4.5:1 in dark (axe). */
+    .pop-power dt { color: var(--text-secondary); }
+    .pop-power dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .pop-power ul { margin: 6px 0 0; padding-left: 1.1em; line-height: 1.45; }
+    .pop-power .nav-btn { margin-top: 8px; }
 
     /* ── Tooltip (kit .mco-tooltip + MCO.map.initCursorTooltip) ──────────── */
     /* kit-override: the kit styles every value line as the accent value. Here
@@ -286,6 +310,73 @@
     }
 
     /* ── Help modal ───────────────────────────────────────────────────────── */
+
+    /* ── Power data dialog (app.js openPowerData) ─────────────────────────── */
+    /* The kit's .mco-modal and .info-modal-box, wider: a chart and a table.
+       The dialog's padding drops to 0.5rem so the box can be 3rem narrower
+       than the viewport and still fit the kit's max-width. */
+    #power-modal { padding: 0.5rem; }
+    /* kit-override: the help box is 540px; this one holds a chart and a table. */
+    .power-box {
+      width: min(1100px, calc(100vw - 3rem));
+      max-height: calc(100dvh - 3rem);
+    }
+    .power-controls { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-bottom: 0.5rem; }
+    .power-metric { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-secondary); }
+    .power-metric[hidden] { display: none; }
+    /* Outside the bar the seg buttons are 30px; 34px here, 40 on touch (kit). */
+    .power-controls .seg-btn { height: auto; min-height: var(--control-h); min-width: 48px; justify-content: center; }
+    .power-status, .power-count, .power-note {
+      font-size: 0.78rem; color: var(--text-secondary); margin: 0.25rem 0; min-height: 1.2em;
+    }
+    .power-note { font-style: italic; }
+    #power-notice-host:empty { display: none; }
+    .power-chart { width: 100%; height: 300px; position: relative; }
+    .power-chart[hidden] { display: none; }
+    /* The table scrolls inside its own focusable region (WCAG 2.1.1), with
+       the header row pinned. */
+    .power-table-wrap {
+      max-height: min(60dvh, 520px); overflow: auto; overscroll-behavior: contain;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .power-table-wrap table {
+      border-collapse: separate; border-spacing: 0; width: 100%;
+      font-size: 0.75rem; color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+    .power-table-wrap caption {
+      caption-side: top; text-align: left; padding: 6px 8px;
+      font-size: 0.75rem; color: var(--text-secondary);
+    }
+    .power-table-wrap th, .power-table-wrap td {
+      padding: 4px 8px; text-align: right; white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    .power-table-wrap thead th {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--bg-raised); color: var(--text-primary); font-weight: 600;
+      vertical-align: bottom;
+    }
+    .power-table-wrap tbody th { text-align: left; font-weight: 500; color: var(--text-primary); }
+    .power-table-wrap .is-text { text-align: left; }
+    .power-more { margin-top: 0.5rem; }
+    .power-more[hidden] { display: none; }
+    .power-foot {
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center;
+      margin-top: 0.75rem; font-size: 0.8rem;
+    }
+    /* Links are underlined (WCAG 1.4.1) and at least 24px tall (2.5.8). */
+    .power-foot a {
+      color: var(--accent-line); text-decoration: underline;
+      display: inline-flex; align-items: center; min-height: 24px;
+    }
+    @media (hover: none) { .power-foot a { min-height: 44px; } }
+    @media (max-width: 640px) {
+      .power-box { padding: 1rem; }
+      /* kit-override: the header's bleed matches the box's 1rem padding. */
+      .power-box .info-modal-header { margin: -1rem -1rem 0.75rem; padding: 1rem 1rem 0.5rem; top: -1rem; }
+      .power-chart { height: 220px; }
+    }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
     /* Header on the kit's breakpoint ladder (HOUSE-STYLE §3; decided
@@ -350,6 +441,7 @@
       <option value="status">Status</option>
       <option value="timesince">Time since</option>
       <option value="health">Health</option>
+      <option value="power">Power</option>
     </select>
     <!-- Last in .mco-rail: opens the drawer on the search field
          (MCO.initNavRail's search option). -->
@@ -390,12 +482,14 @@
       <button type="button" class="nav-btn seg-btn" data-mode="status"    data-value="status"    aria-pressed="true">Status</button>
       <button type="button" class="nav-btn seg-btn" data-mode="timesince" data-value="timesince" aria-pressed="false">Time since</button>
       <button type="button" class="nav-btn seg-btn" data-mode="health"    data-value="health"    aria-pressed="false">Health</button>
+      <button type="button" class="nav-btn seg-btn" data-mode="power"     data-value="power"     aria-pressed="false">Power</button>
     </div>
     <!-- The same choice as a <select> at ≤1400px (MCO.initSegmentedFallback). -->
     <select id="mode-select" class="mode-select" aria-label="Visualization mode" hidden>
       <option value="status">Status</option>
       <option value="timesince">Time since</option>
       <option value="health">Health</option>
+      <option value="power">Power</option>
     </select>
 
     <!-- Networks (multi-select): any combination. Pills with a check on active. -->
@@ -517,8 +611,9 @@
         <li><strong>Status:</strong> reported in the last 2 hours, or not.</li>
         <li><strong>Time since:</strong> time since the last report.</li>
         <li><strong>Health:</strong> whether every expected sensor is reporting.</li>
+        <li><strong>Power:</strong> the battery and charge controller at HydroMet stations.</li>
       </ul>
-      <p>A hollow dot has no record. A numbered dot is several stations at one site.</p>
+      <p>A hollow dot has no record. In Power, it has no power data: AgriMet stations have none. A numbered dot is several stations at one site.</p>
       <details>
         <summary>What the Health categories mean</summary>
         <ul>
@@ -527,6 +622,16 @@
           <li><strong>Partial — known outage:</strong> every silent sensor is a flagged outage.</li>
           <li><strong>Total outage:</strong> no report in the last 2 hours.</li>
         </ul>
+      </details>
+      <details>
+        <summary>What the Power categories mean</summary>
+        <ul>
+          <li><strong>Power OK:</strong> none of the below.</li>
+          <li><strong>Low battery:</strong> 24-hour minimum under 24.5 V (11.5 V at a voltage-only station).</li>
+          <li><strong>Critical:</strong> 24-hour minimum under 23.5 V, or the controller has cut the load. It stays critical if the station then goes silent.</li>
+          <li><strong>Power feed silent:</strong> no power record in 6 hours.</li>
+        </ul>
+        <p>Power records arrive every 2 hours.</p>
       </details>
     </div>
 
@@ -549,7 +654,49 @@
     <div class="info-section">
       <h3>Data</h3>
       <p><a id="api-docs-link">Montana Mesonet API</a>, checked every 5 minutes.</p>
+      <p><a id="power-readme-link">Station power data</a>, updated every 2 hours.</p>
       <p class="info-credit" id="info-credit"></p>
+    </div>
+  </div>
+</dialog>
+
+<!-- Power data (app.js openPowerData): one station's power records as a
+     chart and a table, opened from the sheet's Power data button. The kit's
+     initInfoModal wires it (close buttons, backdrop, focus back to the
+     opener); app.js fills it with DOM APIs. The table is the chart's text
+     alternative. -->
+<dialog id="power-modal" class="mco-modal" aria-labelledby="power-modal-title">
+  <div class="info-modal-box power-box">
+    <div class="info-modal-header">
+      <div>
+        <h2 class="info-modal-title" id="power-modal-title">Power data</h2>
+        <p class="info-modal-subtitle" id="power-modal-sub"></p>
+      </div>
+      <button type="button" class="modal-close" aria-label="Close power data" data-close-modal>×</button>
+    </div>
+    <div class="power-controls">
+      <fieldset class="seg-btns is-radio" id="power-range">
+        <legend class="sr-only">Time range</legend>
+        <label class="nav-btn seg-btn"><input type="radio" name="power-range" value="7d" checked>7 days</label>
+        <label class="nav-btn seg-btn"><input type="radio" name="power-range" value="30d">30 days</label>
+        <label class="nav-btn seg-btn"><input type="radio" name="power-range" value="all">All</label>
+      </fieldset>
+      <span class="power-metric" id="power-metric-wrap">
+        <label for="power-metric">Chart</label>
+        <select id="power-metric" class="mode-select"></select>
+      </span>
+    </div>
+    <p class="power-status" id="power-status"></p>
+    <div id="power-notice-host"></div>
+    <div id="power-chart" class="power-chart" role="img" aria-label="Power chart. The data is in the table that follows."></div>
+    <p class="power-note" id="power-chart-note" hidden></p>
+    <p class="power-count" id="power-count"></p>
+    <div class="power-table-wrap" id="power-table-wrap" tabindex="0" role="region" aria-label="Power records" hidden></div>
+    <button type="button" class="nav-btn power-more" id="power-more" hidden>Show 200 more</button>
+    <div class="power-foot">
+      <button type="button" class="nav-btn is-primary" id="power-csv" disabled>Download CSV</button>
+      <a id="power-parquet-link" target="_blank" rel="noopener noreferrer">Parquet file</a>
+      <a id="power-modal-readme" target="_blank" rel="noopener noreferrer">About the data</a>
     </div>
   </div>
 </dialog>

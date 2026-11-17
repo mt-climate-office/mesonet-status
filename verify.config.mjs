@@ -18,6 +18,10 @@ const rows = () => document.querySelectorAll('#sr-station-table tbody tr').lengt
 // each page function below — a function passed to the page can't close over
 // this module.
 const PHONE = { width: 390, height: 844, touch: true };
+const POWER = 'https://data2.climate.umt.edu/mesonet/power';
+// The Power data dialog is open with records in its table and a chart drawn.
+const powerReady = () => document.getElementById('power-modal').open
+  && document.querySelectorAll('#power-table-wrap tbody tr').length > 0 && !!document.querySelector('#power-chart canvas');
 const DESKTOP = { width: 1440, height: 900 };
 
 // Pixels in a screenshot of the map close to one of the status colors.
@@ -44,6 +48,12 @@ export default {
     { name: 'default', query: '', ready: rows },
     { name: 'health', query: '?mode=health', ready: rows },
     { name: 'timesince', query: '?mode=timesince', ready: rows },
+    // Power mode: the legend has counts once latest.json is in.
+    { name: 'power', query: '?mode=power', ready: () => document.querySelectorAll('#sr-station-table tbody tr').length > 100
+      && [...document.querySelectorAll('#legend-rows .mco-legend-count')].some((c) => c.textContent !== '') },
+    // The Power data dialog over the station sheet (?view=power).
+    { name: 'power-data', query: `?station=${STATION}&view=power`, ready: () => document.getElementById('power-modal').open
+      && document.querySelectorAll('#power-table-wrap tbody tr').length > 0 },
     {
       // The deep link opens the station sheet (kit 0.21.0), at 1440 and 390.
       name: 'station', query: `?station=${STATION}`,
@@ -66,7 +76,8 @@ export default {
     const roma = (page) => page.evaluate(() => MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true }));
     const setColors = async (page, name) => {
       const r = await roma(page);
-      return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[1], r[2], r[4]] : [r[0], r[4]];
+      return name === 'status-age' ? r : name === 'status-health' ? [r[0], r[1], r[2], r[4]]
+        : name === 'status-power' ? [r[0], r[2], r[3], r[4]] : [r[0], r[4]];
     };
     const sheetOpen = () => [...document.querySelectorAll('.mco-sheet')].some((el) => !el.hidden && el.dataset.state === 'full');
     {
@@ -131,6 +142,80 @@ export default {
         want: MCO.palette.sample('roma', 5, { from: 0.1, to: 0.9, reverse: true }),
       }));
       check(`${tag} Time since legend = the five roma bins`, JSON.stringify(r.sw.slice(0, 5)) === JSON.stringify(r.want), JSON.stringify(r));
+      await close();
+    }
+    {
+      // Power mode: the rows OK, Low, Silent, Critical on roma bins 0/2/3/4
+      // (circle swatches), then No power data hollow, the title, and the
+      // counts adding up to the stations drawn. The default load (and
+      // Power mode) fetches no Parquet file, Parquet reader or ECharts:
+      // those load only when the Power data dialog opens.
+      const { page, close } = await open('?mode=power&theme=light', {
+        ready: () => [...document.querySelectorAll('#legend-rows .mco-legend-count')].some((c) => c.textContent !== ''),
+      });
+      const want = await setColors(page, 'status-power');
+      const lg = await page.evaluate(() => ({
+        title: document.getElementById('legend-title').textContent,
+        rows: [...document.querySelectorAll('#legend-rows .mco-legend-row')].map((r) => {
+          const sw = r.querySelector('.mco-legend-swatch');
+          return { key: r.dataset.key, shape: sw.dataset.shape, color: sw.style.getPropertyValue('--swatch').trim(),
+            n: Number((r.querySelector('.mco-legend-count')?.textContent || '').replace(/\D/g, '')) || 0 };
+        }),
+        drawn: document.querySelectorAll('#sr-station-table tbody tr').length,
+        loaded: performance.getEntriesByType('resource').map((e) => e.name).filter((u) => /parquet|echarts/i.test(u)),
+      }));
+      const keys = lg.rows.map((r) => r.key).join();
+      const colors = lg.rows.slice(0, 4).map((r) => r.color.toLowerCase()).join();
+      const sum = lg.rows.reduce((a, r) => a + r.n, 0);
+      check(`${tag} Power legend: ${keys} in roma bins 0/2/3/4 (${colors}), No power data hollow, counts sum ${sum} = ${lg.drawn} drawn`,
+        lg.title === 'Station power' && keys === 'ok,low,silent,critical,null' && colors === want.join().toLowerCase()
+          && lg.rows.slice(0, 4).every((r) => r.shape === 'circle') && lg.rows[4].shape === 'hollow'
+          && lg.rows[0].n > 0 && lg.rows[4].n > 0 && sum === lg.drawn, JSON.stringify(lg.rows));
+      check(`${tag} Power mode load requested no Parquet or ECharts (${JSON.stringify(lg.loaded)})`, lg.loaded.length === 0);
+      await close();
+      const d = await open('');
+      const loaded = await d.page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).filter((u) => /parquet|echarts/i.test(u)));
+      check(`${tag} default load requested no Parquet or ECharts (${JSON.stringify(loaded)})`, loaded.length === 0);
+      await d.close();
+    }
+    {
+      // The Power data dialog (?view=power): its "All" record count is the
+      // station's rows in stations.json (fetched here, status and length
+      // checked, before and after, so a 2-hourly update between the two
+      // reads can't fail it); Esc closes the dialog, not the sheet, focus
+      // goes back to the Power data button and view=power leaves the URL.
+      const rowsFor = async () => {
+        const r = await fetch(`${POWER}/stations.json`);
+        const j = r.ok ? await r.json() : null;
+        const m = Array.isArray(j) ? j.find((x) => x.station === STATION) : null;
+        return r.status === 200 && Array.isArray(j) && j.length > 0 && m && Number.isInteger(m.rows) ? m.rows : null;
+      };
+      const before = await rowsFor();
+      const { page, close } = await open(`?station=${STATION}&view=power`, { ready: powerReady });
+      const opened = await page.evaluate(() => ({ focus: document.activeElement?.matches('#power-modal .modal-close'), q: location.search }));
+      await page.click('#power-range input[value="all"]');
+      await page.waitForTimeout(800);
+      const st = await page.evaluate(() => ({
+        count: document.getElementById('power-count').textContent,
+        heads: [...document.querySelectorAll('#power-table-wrap thead th')].map((t) => t.getAttribute('scope')),
+        rowHead: document.querySelector('#power-table-wrap tbody tr > th')?.getAttribute('scope'),
+        caption: !!document.querySelector('#power-table-wrap caption'),
+        region: [document.getElementById('power-table-wrap').getAttribute('role'), document.getElementById('power-table-wrap').tabIndex].join(),
+      }));
+      const after = await rowsFor();
+      const all = Number((st.count.match(/of ([\d,]+) records/) || [])[1]?.replace(/,/g, ''));
+      check(`${tag} Power data dialog opens on ?view=power with focus on its close button (${JSON.stringify(opened)})`,
+        opened.focus && /view=power/.test(opened.q));
+      check(`${tag} Power data "All": "${st.count}" = stations.json rows (${before}${after !== before ? ' / ' + after : ''})`,
+        before != null && after != null && (all === before || all === after) && /^Showing 200 of /.test(st.count));
+      check(`${tag} Power data table: caption, scope=col headers, scope=row times, focusable region (${JSON.stringify(st)})`,
+        st.caption && st.heads.length > 3 && st.heads.every((h) => h === 'col') && st.rowHead === 'row' && st.region === 'region,0');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+      const c = await page.evaluate(() => ({ dialog: document.getElementById('power-modal').open, sheet: !!document.querySelector('#station-sheet[data-state="full"]:not([hidden])'),
+        focus: document.activeElement?.id, q: location.search }));
+      check(`${tag} Esc closes the Power data dialog only, focus back on the button, view=power out of the URL (${JSON.stringify(c)})`,
+        !c.dialog && c.sheet && c.focus === 'btn-power-data' && !/view=/.test(c.q) && /station=/.test(c.q));
       await close();
     }
     {

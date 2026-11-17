@@ -27,6 +27,27 @@
   const ELEMENTS_ALL_URL = `${API_BASE}/elements/?all=true&type=json`;
   const ELEMENTS_URL     = (s) => `${API_BASE}/elements/${encodeURIComponent(s)}/?type=json`;
 
+  // Station power (mesonet-power): the HydroMet loggers' ChargeData tables,
+  // published every 2 hours as JSON and Parquet on data2 (CORS *; the CSP
+  // connect-src in index.html must allow it). AgriMet stations have no feed.
+  const POWER_BASE         = 'https://data2.climate.umt.edu/mesonet/power';
+  const POWER_LATEST_URL   = `${POWER_BASE}/latest.json`;
+  const POWER_STATIONS_URL = `${POWER_BASE}/stations.json`;
+  const POWER_PARQUET_URL  = (s) => `${POWER_BASE}/stations/${encodeURIComponent(s)}.parquet`;
+  const POWER_README_URL   = `${POWER_BASE}/README.md`;
+  // Thresholds (Kyle, 2026-11-17). `emc` stations have a 24 V Morningstar
+  // controller; `battery_only` stations log only the 12 V logger voltage.
+  // A power record older than silentHours is its own class: the feed, not
+  // the battery, is the news. The logger writes 0.0 V to batt_volt_min_v on
+  // a restart, so any voltage under minValidV is treated as missing.
+  const POWER_RULES = {
+    emc:          { low: 24.5, critical: 23.5 },
+    battery_only: { low: 11.5 },
+    silentHours:  6,
+    minValidV:    5,
+  };
+  const POWER_TIMEOUT_MS = 15 * 1000;
+
   // Auto-refresh latest records every 5 min; refresh "minutes since" colors every 30 s
   const LATEST_REFRESH_MS = 5 * 60 * 1000;
   const REPAINT_TICK_MS   =     30 * 1000;
@@ -73,6 +94,13 @@
   // edge for ≥ 3:1; the pill takes dark text (6.95:1). One value per theme
   // (the same in all three today); verify.config.mjs checks the registry against the sample
   // and the --status-* literals in index.html. Data-encoding (§6).
+  // Power reuses bins 0, 2 and 4 for OK, Low and Critical, and puts a silent
+  // power feed on bin 3, between low and critical: it may be either. Bin 3
+  // against the other Power colors, OKLab ΔE×100 under none/protan/deutan/
+  // tritan (Machado 2009, full severity): OK ≥ 27.8, Low ≥ 18.3, Critical
+  // ≥ 22.4; grayscale ΔL 24.1 / 16.8 / 22.3. Its fill is 2.30:1 on Positron
+  // land, so it leans on the --dot-stroke edge for ≥ 3:1 as bins 1 and 2 do;
+  // the pill takes dark text (7.10:1; #fff would be 2.40:1).
   const ROMA_BINS = ['#1e5fac', '#4bb2ce', '#c0eac3', '#c1a545', '#984e14'];
   const ROLE_SETS = {
     'status-reporting': [
@@ -87,9 +115,15 @@
       { key: 'partial',     label: 'Partial — new sensor outage',  color: ROMA_BINS[2] },
       { key: 'outage',      label: 'Total outage',                 color: ROMA_BINS[4] },
     ],
+    'status-power': [
+      { key: 'ok',       label: 'Power OK',                  color: ROMA_BINS[0] },
+      { key: 'low',      label: 'Low battery',               color: ROMA_BINS[2] },
+      { key: 'silent',   label: 'Power feed silent (≥ 6 h)', color: ROMA_BINS[3] },
+      { key: 'critical', label: 'Critical',                  color: ROMA_BINS[4] },
+    ],
   };
   const ROLES = { dark: ROLE_SETS, light: ROLE_SETS, 'high-contrast': ROLE_SETS };
-  const SET_FOR_MODE = { status: 'status-reporting', timesince: 'status-age', health: 'status-health' };
+  const SET_FOR_MODE = { status: 'status-reporting', timesince: 'status-age', health: 'status-health', power: 'status-power' };
   // A fresh copy of a set's rows for the current theme, in legend order.
   const catSet = (name) => (ROLES[MCO.getTheme()] || ROLES.dark)[name].map((r) => ({ ...r }));
   // The sheet's pills read these (index.html .pop-pill.*).
@@ -98,6 +132,7 @@
     root.setProperty('--status-fresh', ROMA_BINS[0]);
     root.setProperty('--status-known', ROMA_BINS[1]);
     root.setProperty('--status-partial', ROMA_BINS[2]);
+    root.setProperty('--status-silent', ROMA_BINS[3]);
     root.setProperty('--status-stale', ROMA_BINS[4]);
   }
   // Time-since bins: the upper bound in minutes of status-age's keys '0'..'4'
@@ -121,6 +156,18 @@
   const healthClass = (key) => HEALTH_CLASSES.find(c => c.key === key)
     || HEALTH_CLASSES.find(c => c.key === 'outage');
 
+  // Power mode classes, in status-power's order; 'null' (no power feed) is
+  // drawn hollow, as "No record" is in Status and Time since.
+  const POWER_CLASSES = [
+    { key: 'ok',       label: 'Power OK',          short: 'power OK'          },
+    { key: 'low',      label: 'Low battery',       short: 'low battery'       },
+    { key: 'silent',   label: 'Power feed silent', short: 'power feed silent' },
+    { key: 'critical', label: 'Critical',          short: 'power critical'    },
+    { key: 'null',     label: 'No power data',     short: 'no power data'     },
+  ];
+  const powerClass = (key) => POWER_CLASSES.find(c => c.key === key)
+    || POWER_CLASSES.find(c => c.key === 'null');
+
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const refreshStampEl  = document.getElementById('refresh-stamp');
   const subnetFiltersEl = document.getElementById('subnet-filters');
@@ -129,6 +176,7 @@
   const searchInput     = document.getElementById('search-input');
   const searchDropdown  = document.getElementById('search-dropdown');
   const infoModal       = document.getElementById('info-modal');
+  const powerModal      = document.getElementById('power-modal');
 
   // Screen-reader users hear "Station X opened" when a popup is shown via
   // click, search, or deep-link — through MCO.announce, the page's one
@@ -143,7 +191,19 @@
       emergent.length ? `${emergent.length} sensor${emergent.length === 1 ? '' : 's'} not reporting` : '',
       known.length ? `${known.length} flagged outage${known.length === 1 ? '' : 's'}` : '',
     ].filter(Boolean).join(', ');
-    MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}.`);
+    // Power mode only: the class and voltages, as the tooltip shows them.
+    const power = activeMode === 'power' ? `, ${powerSummary(stationId)}` : '';
+    MCO.announce(`${s.name} (${s.station}), ${s.sub_network || 'station'}, ${when}${health ? ', ' + health : ''}${power}.`);
+  }
+  // One line for the tooltip and the announcement: "Low battery · 24.31 V,
+  // 24-hour minimum 24.10 V", or "No power data".
+  function powerSummary(stationId) {
+    const row = powerById.get(stationId);
+    if (!row) return _powerLoaded ? powerClass('null').label
+      : _powerFailed ? 'Power data unavailable' : 'Power data loading';
+    const v = validV(row.batt_volt_v), m = powerMinV(row);
+    const volts = [v == null ? '' : fmtV(v), m == null ? '' : `24-hour minimum ${fmtV(m)}`].filter(Boolean).join(', ');
+    return `${powerClass(powerKey(stationId)).label}${volts ? ' · ' + volts : ''}`;
   }
 
   // ── Info modal ───────────────────────────────────────────────────────────
@@ -155,7 +215,7 @@
   // kit option and is kept, so returning visitors don't see it again.
   const btnInfo = document.getElementById('btn-info');
   const urlParams = MCO.urlParams();
-  const DEEP_LINK_PARAMS = ['station', 'mode', 'net', 'scat', 'tcat', 'hcat', 'lng'];
+  const DEEP_LINK_PARAMS = ['station', 'mode', 'net', 'scat', 'tcat', 'hcat', 'pcat', 'view', 'lng'];
   const hasDeepLink = DEEP_LINK_PARAMS.some((k) => urlParams.has(k));
   const infoDialog = MCO.initInfoModal({
     dialog: infoModal, trigger: btnInfo,
@@ -164,6 +224,8 @@
   document.getElementById('info-credit').textContent = MCO.credit({ source: 'Montana Mesonet' });
   // The API docs link in the help is built from MESONET_ORIGIN, not typed.
   Object.assign(document.getElementById('api-docs-link'), { href: API_DOCS_URL, target: '_blank', rel: 'noopener noreferrer' });
+  // Likewise the power data's README, from POWER_README_URL.
+  Object.assign(document.getElementById('power-readme-link'), { href: POWER_README_URL, target: '_blank', rel: 'noopener noreferrer' });
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   // Absolute stamps are Mountain Time (house convention: every MCO product
@@ -270,6 +332,95 @@
     return String(i);
   }
 
+  // ── Station power (Power mode + the sheet's power block) ────────────────
+  // A voltage, or null when it is missing or below minValidV (the logger's
+  // 0.0 V restart value is not a reading).
+  function validV(x) {
+    return typeof x === 'number' && Number.isFinite(x) && x >= POWER_RULES.minValidV ? x : null;
+  }
+  // The 24-hour minimum, falling back to the 2-hour minimum and then the
+  // sample when the one before it is missing.
+  function powerMinV(row) {
+    if (!row) return null;
+    return validV(row.batt_volt_min_24h_v) ?? validV(row.batt_volt_min_v) ?? validV(row.batt_volt_v);
+  }
+  const powerTimeMs = (row) => {
+    const t = row ? Date.parse(row.timestamp) : NaN;
+    return Number.isFinite(t) ? t : null;
+  };
+  // 'emc' or 'battery_only', from stations.json. A station in latest.json
+  // but not (yet) in stations.json is judged by its own row: a load state
+  // means a controller.
+  function powerTable(stationId) {
+    const meta = powerMetaById.get(stationId);
+    if (meta && (meta.table === 'emc' || meta.table === 'battery_only')) return meta.table;
+    const row = powerById.get(stationId);
+    return row && row.load_state != null ? 'emc' : 'battery_only';
+  }
+  // ok | low | critical | silent, or 'null' (a string, like the other
+  // modes' keys, so it can sit in a URL param and a layer filter) when the
+  // station has no power feed. A row with no valid voltage at all and a
+  // normal load state is OK: powerReasons says the voltage is missing.
+  function powerKey(stationId) {
+    const row = powerById.get(stationId);
+    if (!row) return 'null';
+    // What the newest record says, then whether that record is still news.
+    // A station that went silent while critical stays critical (Kyle,
+    // 2026-11-17): the likeliest reason it stopped is that it ran out of
+    // power. Any other silent station is 'silent': its state is unknown.
+    const last = powerRecordKey(stationId, row);
+    const t = powerTimeMs(row);
+    const stale = t == null || Date.now() - t > POWER_RULES.silentHours * 3600000;
+    return stale && last !== 'critical' ? 'silent' : last;
+  }
+  // The class the record itself earns, whatever its age.
+  function powerRecordKey(stationId, row) {
+    const minV = powerMinV(row);
+    if (powerTable(stationId) === 'emc') {
+      const r = POWER_RULES.emc;
+      if (row.load_state != null && row.load_state !== 1) return 'critical';
+      if (minV != null && minV < r.critical) return 'critical';
+      if (minV != null && minV < r.low) return 'low';
+      return 'ok';
+    }
+    if (minV != null && minV < POWER_RULES.battery_only.low) return 'low';
+    return 'ok';
+  }
+  const fmtV = (v) => `${v.toFixed(2)} V`;
+  // The plain-language reasons behind the class, worst first, then notes
+  // (qc bits 4 and 8). [] for a station with no power feed.
+  function powerReasons(stationId) {
+    const row = powerById.get(stationId);
+    if (!row) return [];
+    const table = powerTable(stationId);
+    const minV = powerMinV(row);
+    const out = [];
+    // Said whenever the record is old, whatever the class: a station that
+    // went silent while critical is critical AND silent.
+    const t = powerTimeMs(row);
+    if (t == null || Date.now() - t > POWER_RULES.silentHours * 3600000) {
+      out.push(t == null ? 'No power record time'
+        : `No power record since ${MCO.formatStampMT(t)} (${relativeStamp(t)})`);
+    }
+    if (table === 'emc') {
+      const r = POWER_RULES.emc;
+      if (row.load_state != null && row.load_state !== 1) {
+        out.push(`Load state ${row.load_state_label || row.load_state}, not Load On`);
+      }
+      if (minV != null && minV < r.critical) out.push(`24-hour minimum ${fmtV(minV)}, under ${r.critical} V`);
+      else if (minV != null && minV < r.low) out.push(`24-hour minimum ${fmtV(minV)}, under ${r.low} V`);
+    } else {
+      const r = POWER_RULES.battery_only;
+      if (minV != null && minV < r.low) out.push(`24-hour minimum ${fmtV(minV)}, under ${r.low} V`);
+      out.push('Voltage only (no charge controller)');
+    }
+    if (minV == null) out.push('No valid battery voltage in the latest record');
+    const qc = Number(row.qc_flags) || 0;
+    if (qc & 4) out.push('Note: the charge controller read failed in the latest record');
+    if (qc & 8) out.push('Note: the logger station or program does not match this station');
+    return out;
+  }
+
   // ── State ────────────────────────────────────────────────────────────────
   let stations    = [];                       // raw /api/stations response
   let latestById  = new Map();                // station id → datetime ms
@@ -282,6 +433,19 @@
   let elementsFetchedAt = new Map();          // station id → ms the list was fetched
   let elementsFailed = new Set();
   let _elementsProgress = { done: 0, total: 0, loading: false };
+  // Power-mode inputs, replaced whole on each successful loadPower() and kept
+  // as they were when a refresh fails. A station absent from powerById has
+  // no power feed (every AgriMet station).
+  let powerById     = new Map();              // station id → latest.json row
+  let powerMetaById = new Map();              // station id → stations.json row
+  let _powerLoaded  = false;                  // one load has succeeded
+  let _powerFailed  = false;                  // the most recent load failed
+  let _powerLoading = false;
+  let _powerNotice  = null;
+  // The Power data dialog: its station, the station's records (newest
+  // first), the range and chart picks, how many table rows are drawn, and a
+  // sequence number so a slow read for an earlier open is dropped.
+  const pd = { station: null, rows: null, range: '7d', metric: 'voltage', seq: 0, notice: null };
   // description_short → wide-record key ("Soil VWC @ -91 cm" → "Soil VWC @ -91 cm [%]").
   // Wide keys are the union across stations, so one record's keys suffice;
   // rebuilt per /latest/ payload so the 30 s tick never scans strings.
@@ -328,7 +492,7 @@
   const networkByLowerName = new Map(KNOWN_NETWORKS.map(n => [n.toLowerCase(), n]));
 
   // Mode ids double as URL/localStorage values; MODES (below) is the whitelist.
-  const MODE_IDS = ['status', 'timesince', 'health'];
+  const MODE_IDS = ['status', 'timesince', 'health', 'power'];
   let activeMode = (() => {
     const u = getLower('mode');
     if (MODE_IDS.includes(u)) return u;
@@ -357,6 +521,10 @@
   const _hasInitPos = Number.isFinite(_initLng) && Number.isFinite(_initLat) && Number.isFinite(_initZoom);
   // Station IDs in the API are already lowercase; normalize the URL param too.
   const _initStation = getLower('station');
+  // ?station=<id>&view=power: the Power data dialog opens once that station's
+  // sheet is open and the power files have loaded (maybeOpenPowerView);
+  // ignored for a station with no power feed. Back/Forward set it too.
+  let _pendingPowerView = _initStation && getLower('view') === 'power' ? _initStation : null;
 
   // ── Legend category visibility (Plotly-style toggles) ────────────────────
   // Each mode has its own visible-category set. Missing URL param = all visible.
@@ -364,6 +532,8 @@
   const ALL_TIME_CATS   = ['0', '1', '2', '3', '4', 'null'];
   // No 'null' in health: a station with no record IS a total outage.
   const ALL_HEALTH_CATS = HEALTH_CLASSES.map(c => c.key);
+  // Power keeps a 'null': no power feed is not a power fault.
+  const ALL_POWER_CATS  = POWER_CLASSES.map(c => c.key);
   function parseCatSet(urlKey, allKeys) {
     const tokens = MCO.splitTokens(urlParams.get(urlKey));
     if (tokens === null) return new Set(allKeys);
@@ -377,6 +547,7 @@
     status:    { all: ALL_STATUS_CATS, cats: parseCatSet('scat', ALL_STATUS_CATS), prop: 'staleStatus', param: 'scat', title: 'Reporting status' },
     timesince: { all: ALL_TIME_CATS,   cats: parseCatSet('tcat', ALL_TIME_CATS),   prop: 'timeBinKey',  param: 'tcat', title: 'Time since last record' },
     health:    { all: ALL_HEALTH_CATS, cats: parseCatSet('hcat', ALL_HEALTH_CATS), prop: 'healthKey',   param: 'hcat', title: 'Station health' },
+    power:     { all: ALL_POWER_CATS,  cats: parseCatSet('pcat', ALL_POWER_CATS),  prop: 'powerKey',    param: 'pcat', title: 'Station power' },
   };
   function currentCats()    { return MODES[activeMode].cats; }
   function currentAllCats() { return MODES[activeMode].all; }
@@ -592,6 +763,11 @@
       // element lists), so no time math in the expression.
       return ['match', ['get', 'healthKey'], ...set.flatMap(c => [c.key, c.color]), set[set.length - 1].color];
     }
+    if (mode === 'power') {
+      // Categorical, computed in JS (powerKey); 'null' (no power feed) falls
+      // through to no fill and is drawn hollow (stationPaint).
+      return ['match', ['get', 'powerKey'], ...set.flatMap(c => [c.key, c.color]), CLEAR];
+    }
     if (mode === 'status') {
       return ['case',
         ['==', ['get', 'minutesSince'], null], CLEAR,
@@ -619,14 +795,18 @@
   // No record = no fill: a 2px --dot-stroke ring (the same edge contrast
   // every dot has, so ≥ 3:1 on both basemaps), as the legend's hollow
   // swatch shows. Health mode has no "no record": a station that never
-  // reported is an outage.
-  const NO_RECORD = ['==', ['get', 'minutesSince'], null];
+  // reported is an outage. In Power mode the hollow ring is "No power data"
+  // (no power feed, whatever the station's own reporting), so each mode
+  // names its own null test.
+  const noRecordFor = (mode) => mode === 'power'
+    ? ['==', ['get', 'powerKey'], 'null']
+    : ['==', ['get', 'minutesSince'], null];
   const hasNoRecordMode = (mode) => mode !== 'health';
   function stationPaint() {
     const hollow = hasNoRecordMode(activeMode);
     return MCO.map.stationPaint({
       fill: paintColorForMode(activeMode),
-      strokeWidth: hollow ? ['case', NO_RECORD, 2, 1.2] : 1.2,
+      strokeWidth: hollow ? ['case', noRecordFor(activeMode), 2, 1.2] : 1.2,
     });
   }
 
@@ -752,6 +932,8 @@
       MCO.ready();
       _loaded = true;
       if (_loadNotice) _loadNotice.close();
+      // Power after the stations, never awaited: it can't delay or fail them.
+      loadPower();
     } catch (err) {
       console.error(err);
       // One notice while the failure lasts, so a retry every interval is not
@@ -776,6 +958,8 @@
 
   async function refreshLatest() {
     if (!_loaded) return loadAll();
+    // Its own request and its own failure handling, alongside /latest/.
+    loadPower();
     try {
       const latest = await MCO.fetchJSON(LATEST_URL, { cache: 'no-store' });
       ingestLatest(latest);
@@ -811,6 +995,73 @@
       }
       _wideKeyByLabel = byLabel;
     }
+  }
+
+  // ── Station power (Power mode) ───────────────────────────────────────────
+  // Both files with the default HTTP cache (not no-store): they change every
+  // 2 hours and the CDN says max-age=300, so the 5-minute poll costs a
+  // revalidation at most. Never awaited by the station load, and never
+  // throws: on failure the last good data stays, the legend note says so,
+  // one notice shows while Power mode is up, and the next tick retries.
+  async function loadPower() {
+    if (_powerLoading) return;
+    _powerLoading = true;
+    const openRow = _sheetFor ? powerById.get(_sheetFor) : null;
+    const wasLoaded = _powerLoaded;
+    try {
+      const [latest, meta] = await Promise.all([
+        MCO.fetchJSON(POWER_LATEST_URL,   { timeoutMs: POWER_TIMEOUT_MS }),
+        MCO.fetchJSON(POWER_STATIONS_URL, { timeoutMs: POWER_TIMEOUT_MS }),
+      ]);
+      // An empty or malformed file is a failure, not "no station has power".
+      if (!Array.isArray(latest) || !latest.length || !Array.isArray(meta) || !meta.length) {
+        throw new Error('power data empty or malformed');
+      }
+      const ok = (r) => r && typeof r.station === 'string';
+      powerById = new Map(latest.filter(ok).map((r) => [r.station, r]));
+      powerMetaById = new Map(meta.filter(ok).map((r) => [r.station, r]));
+      _powerLoaded = true;
+      _powerFailed = false;
+      if (_powerNotice) _powerNotice.close();
+      if (!wasLoaded) logPowerSummary();
+    } catch (err) {
+      console.warn('Power data unavailable:', err.message);
+      _powerFailed = true;
+      showPowerNotice();
+    } finally {
+      _powerLoading = false;
+    }
+    rebuildSource();
+    // Refill an open sheet only when its station's power record changed:
+    // a refill every 5 minutes would drop focus from the sheet's buttons.
+    if (_sheetFor) {
+      const row = powerById.get(_sheetFor) || null;
+      if ((openRow && openRow.timestamp) !== (row && row.timestamp)) fillSheet(_sheetFor);
+    }
+    maybeOpenPowerView();
+  }
+  // One notice while the failure lasts, and only in Power mode: the other
+  // modes don't use the data.
+  function showPowerNotice() {
+    if (activeMode !== 'power' || !_powerFailed || _powerNotice || !map) return;
+    _powerNotice = MCO.notice({
+      tone: 'warning',
+      text: `Station power data failed to load. Trying again every ${LATEST_REFRESH_MS / 60000} minutes.`,
+      container: map.getContainer(), place: 'over',
+      action: { label: 'Retry', onClick: () => { _powerNotice.close(); loadPower(); } },
+      onClose: () => { _powerNotice = null; },
+    });
+  }
+  // The first load's class counts, for checking against the source files.
+  function logPowerSummary() {
+    const counts = {};
+    const notOk = {};
+    for (const id of powerById.keys()) {
+      const k = powerKey(id);
+      counts[k] = (counts[k] || 0) + 1;
+      if (k !== 'ok') (notOk[k] = notOk[k] || []).push(id);
+    }
+    console.info(`Power: ${powerById.size} stations with power data`, counts, notOk);
   }
 
   // ── Expected element lists (Health mode) ─────────────────────────────────
@@ -1056,6 +1307,7 @@
       staleStatus:  statusBucket(mins),
       timeBinKey:   timeBinKey(mins),
       healthKey:    healthKey(s.station, mins),
+      powerKey:     powerKey(s.station),
       missingCount: missingElements(s.station).length,
     };
   }
@@ -1087,6 +1339,9 @@
       { key: 'health', label: 'Health' },
       { key: 'missing', label: 'Sensors not reporting (new)' },
       { key: 'known', label: 'Known outages (flagged)' },
+      { key: 'power', label: 'Power' },
+      { key: 'volt', label: 'Battery voltage' },
+      { key: 'vmin', label: '24-hour minimum voltage' },
       { key: 'site', label: 'Site' },
       { key: 'county', label: 'County' },
     ],
@@ -1111,6 +1366,22 @@
           : elementsById.has(s.station) ? null
           : elementsFailed.has(s.station) ? 'sensor list unavailable' : 'sensor list loading',
         known: known.length ? known.map(e => `${e.label} (since ${MCO.formatDateStr(e.since)})`).join(', ') : null,
+        // Power: the class and its reasons, as the sheet shows them.
+        ...(() => {
+          const prow = powerById.get(s.station);
+          if (!prow) {
+            const why = _powerLoaded ? powerClass('null').short
+              : _powerFailed ? 'power data unavailable' : 'power data loading';
+            return { power: why, volt: null, vmin: null };
+          }
+          const reasons = powerReasons(s.station);
+          const v = validV(prow.batt_volt_v), m = powerMinV(prow);
+          return {
+            power: powerClass(powerKey(s.station)).short + (reasons.length ? ` (${reasons.join('; ')})` : ''),
+            volt: v == null ? null : fmtV(v),
+            vmin: m == null ? null : fmtV(m),
+          };
+        })(),
         // The count badge, as text: the canvas spider is pointer-only.
         site: (() => {
           const n = (coloc && coloc.info(s.station) || { count: 1 }).count;
@@ -1139,7 +1410,7 @@
     return counts;
   }
 
-  // Legend footer note, Health mode only: progress while element lists stream
+  // Legend footer note, Health and Power modes. Health: progress while element lists stream
   // in, then how many fresh stations lack a list (they count as operational)
   // or lack outage flags (an API without them: every silent sensor reads as
   // new, so say so rather than imply zero known outages).
@@ -1158,6 +1429,13 @@
           f ? `Outage flags unavailable for ${f} station${f === 1 ? '' : 's'}` : '',
         ].filter(Boolean).join(' · ');
       }
+    }
+    // Power mode: until the first load every station reads "No power
+    // data", so say why; after a failed refresh the classes are the last
+    // good data's.
+    if (activeMode === 'power' && stations.length) {
+      txt = _powerFailed ? (_powerLoaded ? 'Power data refresh failed; showing the last load' : 'Power data unavailable')
+        : !_powerLoaded ? 'Loading power data…' : '';
     }
     el.textContent = txt;
     el.hidden = !txt;
@@ -1389,6 +1667,9 @@
         : healthClass(hKey).short;
       tags.append(pill(hKey, hLbl));
     }
+    // Power pill, in every mode, for a station with a power feed.
+    const pKey = powerById.has(stationId) ? powerKey(stationId) : null;
+    if (pKey) tags.append(pill(`power-${pKey}`, powerClass(pKey).short));
     const stamp = el('div', 'pop-stamp');
     stamp.append(el('div', null, ts == null ? '—' : MCO.formatStampMT(ts)), el('div', null, relativeStamp(ts)));
     root.insertBefore(tags, before);
@@ -1417,6 +1698,8 @@
       }
     }
 
+    if (pKey) root.insertBefore(powerBlock(stationId), before);
+
     // The other visible stations at this site (kit colocation): the keyboard
     // and touch route across a site, since the canvas spider is pointer-only.
     const sibs = coloc ? coloc.siblings(stationId) : [];
@@ -1436,6 +1719,591 @@
       root.insertBefore(box, before);
     }
     return frag;
+  }
+
+  // The sheet's power block (every mode; only for a station in powerById):
+  // the latest power record as label/value pairs, the reasons behind the
+  // class, and the Power data button. A voltage-only station shows its two
+  // voltages. Missing values (null, or a sub-minValidV voltage) are "—".
+  function powerBlock(stationId) {
+    const row = powerById.get(stationId);
+    const emc = powerTable(stationId) === 'emc';
+    const num = (x, digits, unit) => (typeof x === 'number' && Number.isFinite(x)) ? `${x.toFixed(digits)} ${unit}` : '—';
+    const v = validV(row.batt_volt_v), m = powerMinV(row);
+    const t = powerTimeMs(row);
+    const facts = [
+      ['Battery now', v == null ? '—' : fmtV(v)],
+      ['24-hour minimum', m == null ? '—' : fmtV(m)],
+    ];
+    if (emc) {
+      facts.push(
+        ['Charge state', row.charge_state_label || (row.charge_state ?? '—')],
+        ['Load state', row.load_state_label || (row.load_state ?? '—')],
+        ['Net battery current', num(row.net_battery_current_a, 2, 'A')],
+        ['Battery temperature', num(row.battery_temp_c, 1, '°C')],
+      );
+    }
+    facts.push(['Power record', t == null ? '—' : `${MCO.formatStampMT(t)} (${relativeStamp(t)})`]);
+
+    const box = el('div', 'pop-power');
+    box.append(el('h3', null, emc ? 'Power' : 'Power · voltage only'));
+    const dl = el('dl');
+    for (const [k, val] of facts) dl.append(el('dt', null, k), el('dd', null, String(val)));
+    box.append(dl);
+    // The reasons, less the "voltage only" line the heading already says.
+    const reasons = powerReasons(stationId).filter((r) => !r.startsWith('Voltage only'));
+    if (reasons.length) {
+      const ul = el('ul');
+      for (const r of reasons) ul.append(el('li', null, r));
+      box.append(ul);
+    }
+    const btn = el('button', 'nav-btn', 'Power data');
+    btn.type = 'button';
+    btn.id = 'btn-power-data';
+    btn.addEventListener('click', () => openPowerData(stationId, btn));
+    box.append(btn);
+    return box;
+  }
+
+  // ── Power data dialog ────────────────────────────────────────────────────
+  // One station's power history from its Parquet file: a chart over a
+  // table, a range (7 days, 30 days or All, counted back from the station's
+  // newest record), a CSV of the range, and links to the file and the
+  // README. The reader (vendor/parquet.min.js, scripts/vendor.sh) and ECharts
+  // load on the first open; the default page load fetches neither. Each file
+  // is one row group (25 KB – 2 MB), so it is fetched whole, not by range
+  // requests: one read per station per page load, read again when
+  // stations.json reports a newer record. The dialog is the kit's
+  // initInfoModal (close buttons, backdrop, focus to the close button on
+  // open and back to the opener on close); a native modal <dialog> traps
+  // focus and takes Esc before the kit's Esc stack, so Esc closes it and not
+  // the sheet under it.
+  const ECHARTS = {
+    src: 'https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js',
+    integrity: 'sha384-C2iskrW/uPW46KzOjrvJIQo4YkV8lkD+QS0CrDN18IIPIpT/g2USu8bTP3nvmIAD',
+  };
+  const POWER_FILE_TIMEOUT_MS = 30 * 1000;
+  const POWER_PAGE_ROWS = 200;
+  const POWER_RANGES = [
+    { key: '7d',  label: '7 days',  days: 7 },
+    { key: '30d', label: '30 days', days: 30 },
+    { key: 'all', label: 'All',     days: null },
+  ];
+  // qc_flags bits (the power README), in words for the table and the CSV.
+  const QC_BITS = [[1, 'out of order'], [2, 'conflicting source'], [4, 'controller read failed'], [8, 'station/program mismatch']];
+  function qcWords(q) {
+    if (q == null) return null;
+    const n = Number(q);
+    if (!n) return 'none';
+    const words = QC_BITS.filter(([b]) => n & b).map(([, w]) => w);
+    const rest = n & ~15;
+    if (rest) words.push(`other (${rest})`);
+    return words.join('; ');
+  }
+  // The table's columns after the time: the Parquet column, its header
+  // (units in it), decimals (null for text), and emc: true for the
+  // controller's, left out at a voltage-only station. The CSV has the same
+  // columns under their Parquet names.
+  const POWER_COLS = [
+    { key: 'batt_volt_v',                label: 'Battery (V)',             digits: 2 },
+    { key: 'batt_volt_min_v',            label: 'Interval minimum (V)',    digits: 2 },
+    { key: 'charge_state_label',         label: 'Charge state',            digits: null, emc: true },
+    { key: 'load_state_label',           label: 'Load state',              digits: null, emc: true },
+    { key: 'net_battery_current_a',      label: 'Net battery current (A)', digits: 2, emc: true },
+    { key: 'charge_current_a',           label: 'Charge current (A)',      digits: 2, emc: true },
+    { key: 'array_current_a',            label: 'Array current (A)',       digits: 2, emc: true },
+    { key: 'load_current_a',             label: 'Load current (A)',        digits: 2, emc: true },
+    { key: 'battery_terminal_voltage_v', label: 'Battery terminal (V)',    digits: 2, emc: true },
+    { key: 'load_voltage_v',             label: 'Load voltage (V)',        digits: 2, emc: true },
+    { key: 'battery_temp_c',             label: 'Battery temp. (°C)',      digits: 1, emc: true },
+    { key: 'heatsink_temp_c',            label: 'Heatsink temp. (°C)',     digits: 1, emc: true },
+    { key: 'ambient_temp_c',             label: 'Ambient temp. (°C)',      digits: 1, emc: true },
+    { key: 'total_ah_charge',            label: 'Total charge (Ah)',       digits: 1, emc: true },
+    { key: 'total_ah_load',              label: 'Total load (Ah)',         digits: 1, emc: true },
+    { key: 'qc_flags',                   label: 'QC flags',                digits: null, qc: true },
+  ];
+  // The chart's picks. volts: voltages under minValidV (the logger's 0.0 V
+  // restart value) are left off the chart, so the axis isn't dragged to 0.
+  const POWER_METRICS = [
+    { key: 'voltage', label: 'Battery voltage', unit: 'V', digits: 2, volts: true,
+      series: [['batt_volt_v', 'Battery'], ['batt_volt_min_v', 'Interval minimum']] },
+    { key: 'current', label: 'Currents', unit: 'A', digits: 2, emc: true,
+      series: [['net_battery_current_a', 'Net battery'], ['charge_current_a', 'Charge'], ['array_current_a', 'Array'], ['load_current_a', 'Load']] },
+    { key: 'temp', label: 'Temperatures', unit: '°C', digits: 1, emc: true,
+      series: [['battery_temp_c', 'Battery'], ['heatsink_temp_c', 'Heatsink'], ['ambient_temp_c', 'Ambient']] },
+  ];
+
+  // Mountain Time on the chart axis (as mesonet-aq does): ECharts formats a
+  // time axis in browser-local time or UTC only, so each timestamp is
+  // shifted by the America/Denver offset and drawn with useUTC.
+  const _mtOffsets = new Map();
+  const _mtParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: MCO.TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  function mtOffset(ms) {
+    const h = Math.floor(ms / 3600000);
+    let off = _mtOffsets.get(h);
+    if (off === undefined) {
+      const p = Object.fromEntries(_mtParts.formatToParts(new Date(h * 3600000)).map((x) => [x.type, x.value]));
+      off = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - h * 3600000;
+      _mtOffsets.set(h, off);
+    }
+    return off;
+  }
+  // The CSV's Mountain Time column: "2026-11-17 11:00 MST".
+  const _mtCsv = new Intl.DateTimeFormat('en-US', {
+    timeZone: MCO.TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
+  function mtCsvStamp(ms) {
+    const p = Object.fromEntries(_mtCsv.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
+  }
+  const fmtCount = (n) => n.toLocaleString('en-US');
+
+  // Loaders: the promise cache dedupes concurrent calls and forgets a
+  // failure, so Retry refetches.
+  const powerCache = MCO.promiseCache();
+  const parquetLib = () => powerCache.cached('lib', () => import('./vendor/parquet.min.js'));
+  function loadECharts() {
+    return powerCache.cached('echarts', () => new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = ECHARTS.src;
+      s.integrity = ECHARTS.integrity;
+      s.crossOrigin = 'anonymous';
+      s.onload = () => resolve(window.echarts);
+      s.onerror = () => { s.remove(); reject(new Error('chart library failed to load')); };
+      document.head.appendChild(s);
+    }));
+  }
+  // The station's file. The URL from stations.json is used only if it is
+  // under POWER_BASE, so a string from the network never becomes a fetch or
+  // link target unchecked.
+  function powerFileUrl(stationId) {
+    const meta = powerMetaById.get(stationId);
+    return meta && typeof meta.parquet === 'string' && meta.parquet.startsWith(`${POWER_BASE}/`)
+      ? meta.parquet : POWER_PARQUET_URL(stationId);
+  }
+  // One row as the dialog uses it: t (ms), then the columns. `timestamp`
+  // arrives as a Date, `record` (int64) as a BigInt (not kept: JSON and
+  // arithmetic both choke on it); the rest are Numbers, strings or null.
+  function normalizePowerRow(r) {
+    const ts = r.timestamp;
+    const o = { t: ts instanceof Date ? ts.getTime() : Date.parse(ts) };
+    for (const c of POWER_COLS) {
+      const v = r[c.key];
+      o[c.key] = v == null ? null : typeof v === 'bigint' ? Number(v) : v;
+    }
+    return o;
+  }
+  const _powerFileKey = new Map();            // station id → its current cache key
+  function readPowerFile(stationId) {
+    const url = powerFileUrl(stationId);
+    const meta = powerMetaById.get(stationId);
+    const key = `file|${url}|${(meta && meta.last) || ''}`;
+    const old = _powerFileKey.get(stationId);
+    if (old && old !== key) powerCache.invalidate(old);
+    _powerFileKey.set(stationId, key);
+    return powerCache.cached(key, async () => {
+      const pq = await parquetLib();
+      const res = await fetch(url, { signal: AbortSignal.timeout(POWER_FILE_TIMEOUT_MS) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      if (!buf.byteLength) throw new Error('empty file');
+      const raw = await pq.parquetReadObjects({
+        file: buf,
+        compressors: { ZSTD: (input) => pq.zstdDecompress(input) },
+      });
+      const rows = raw.map(normalizePowerRow).filter((r) => Number.isFinite(r.t)).sort((a, b) => b.t - a.t);
+      if (!rows.length) throw new Error('no records');
+      if (rows.length !== raw.length) console.warn(`Power: ${raw.length - rows.length} ${stationId} records without a time left out`);
+      return rows;
+    });
+  }
+
+  const powerDialog = MCO.initInfoModal({ dialog: powerModal });
+  const pEl = {
+    title:  document.getElementById('power-modal-title'),
+    sub:    document.getElementById('power-modal-sub'),
+    range:  document.getElementById('power-range'),
+    metric: document.getElementById('power-metric'),
+    metricWrap: document.getElementById('power-metric-wrap'),
+    status: document.getElementById('power-status'),
+    noticeHost: document.getElementById('power-notice-host'),
+    chart:  document.getElementById('power-chart'),
+    note:   document.getElementById('power-chart-note'),
+    count:  document.getElementById('power-count'),
+    wrap:   document.getElementById('power-table-wrap'),
+    more:   document.getElementById('power-more'),
+    csv:    document.getElementById('power-csv'),
+    parquet: document.getElementById('power-parquet-link'),
+  };
+  document.getElementById('power-modal-readme').href = POWER_README_URL;
+  // The status line takes focus back when the failure notice's Retry
+  // removes the button that had it.
+  pEl.status.tabIndex = -1;
+  let powerChart = null;
+  // The drawn table: its rows (the range, newest first), body and count.
+  let _ptable = { rows: [], body: null, drawn: 0 };
+
+  function openPowerData(stationId, openerButton) {
+    if (!powerById.has(stationId)) return;
+    const s = stationById.get(stationId);
+    const emc = powerTable(stationId) === 'emc';
+    pd.station = stationId;
+    pd.rows = null;
+    pd.range = '7d';
+    pEl.title.textContent = `Power data · ${s ? s.name : stationId}`;
+    pEl.sub.textContent = `${stationId} · ${emc ? 'charge controller' : 'voltage only'} · Mountain Time`;
+    for (const input of pEl.range.querySelectorAll('input')) input.checked = input.value === pd.range;
+    // A voltage-only station has only the voltages to chart.
+    const metrics = POWER_METRICS.filter((m) => emc || !m.emc);
+    if (!metrics.some((m) => m.key === pd.metric)) pd.metric = 'voltage';
+    pEl.metric.replaceChildren(...metrics.map((m) => {
+      const o = el('option', null, m.label);
+      o.value = m.key;
+      return o;
+    }));
+    pEl.metric.value = pd.metric;
+    pEl.metricWrap.hidden = metrics.length < 2;
+    pEl.parquet.href = powerFileUrl(stationId);
+    clearPowerView();
+    // The kit returns focus to whatever had it at open: the button.
+    if (openerButton && openerButton.isConnected) openerButton.focus();
+    if (!powerModal.open) powerDialog.open();
+    writeUrl();
+    loadPowerDialog();
+  }
+
+  function clearPowerView() {
+    disposePowerChart();
+    closePowerNotice();
+    pEl.chart.hidden = false;
+    pEl.chart.setAttribute('aria-label', 'Power chart. The data is in the table that follows.');
+    pEl.note.hidden = true;
+    pEl.note.textContent = '';
+    pEl.count.textContent = '';
+    pEl.wrap.replaceChildren();
+    pEl.wrap.hidden = true;
+    pEl.more.hidden = true;
+    pEl.csv.disabled = true;
+    _ptable = { rows: [], body: null, drawn: 0 };
+  }
+  function closePowerNotice() {
+    if (pd.notice) { pd.notice.close(); pd.notice = null; }
+  }
+
+  async function loadPowerDialog() {
+    const seq = ++pd.seq;
+    const id = pd.station;
+    closePowerNotice();
+    pEl.chart.hidden = false;
+    pEl.status.textContent = 'Loading power records…';
+    MCO.announce('Loading power records.');
+    let rows;
+    try {
+      rows = await readPowerFile(id);
+    } catch (err) {
+      if (seq !== pd.seq || !powerModal.open) return;
+      console.warn(`Power records for ${id} unavailable:`, err.message);
+      pEl.status.textContent = 'The power records failed to load.';
+      pEl.chart.hidden = true;
+      pd.notice = MCO.notice({
+        tone: 'danger', politeness: 'polite', dismissible: false,
+        text: 'The power records failed to load. Check your connection and try again.',
+        container: pEl.noticeHost, returnFocus: pEl.status,
+        action: { label: 'Retry', onClick: () => loadPowerDialog() },
+      });
+      return;
+    }
+    if (seq !== pd.seq || !powerModal.open) return;
+    pd.rows = rows;
+    renderPowerView(true);
+  }
+
+  // The records in the selected range, newest first.
+  function powerRangeRows() {
+    const all = pd.rows || [];
+    const r = POWER_RANGES.find((x) => x.key === pd.range) || POWER_RANGES[0];
+    if (!r.days || !all.length) return all;
+    const start = all[0].t - r.days * 86400000;
+    const n = all.findIndex((x) => x.t <= start);
+    return n < 0 ? all : all.slice(0, n);
+  }
+  const rangeLabel = () => {
+    const r = POWER_RANGES.find((x) => x.key === pd.range) || POWER_RANGES[0];
+    return r.days ? `Last ${r.label} of records` : 'All records';
+  };
+
+  function renderPowerView(announce) {
+    const rows = powerRangeRows();
+    pEl.status.textContent = rows.length
+      ? `${rangeLabel()}: ${MCO.formatStampMT(rows[rows.length - 1].t)} to ${MCO.formatStampMT(rows[0].t)}.`
+      : 'No power records.';
+    renderPowerTable(rows);
+    pEl.csv.disabled = !rows.length;
+    drawPowerChart();
+    if (announce) MCO.announce(`${rangeLabel()}. ${pEl.count.textContent}`);
+  }
+
+  // ── The table ──
+  function powerColumns() {
+    const emc = powerTable(pd.station) === 'emc';
+    return POWER_COLS.filter((c) => emc || !c.emc);
+  }
+  function powerCell(c, r) {
+    const v = r[c.key];
+    if (c.qc) return qcWords(v) ?? '—';
+    if (v == null) return '—';
+    if (c.digits == null) return String(v);
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    const t = n.toFixed(c.digits);
+    return /^-0\.?0*$/.test(t) ? t.slice(1) : t;   // -0.004 reads 0.00, not -0.00
+  }
+  function renderPowerTable(rows) {
+    const cols = powerColumns();
+    const s = stationById.get(pd.station);
+    const table = el('table');
+    table.append(el('caption', null,
+      `Power records, ${s ? s.name : pd.station}, ${rangeLabel().toLowerCase()}, newest first. Times are Mountain Time.`));
+    const thead = el('thead');
+    const hr = el('tr');
+    const th0 = el('th', 'is-text', 'Time (Mountain)');
+    th0.scope = 'col';
+    hr.append(th0);
+    for (const c of cols) {
+      const th = el('th', c.digits == null ? 'is-text' : null, c.label);
+      th.scope = 'col';
+      hr.append(th);
+    }
+    thead.append(hr);
+    const body = el('tbody');
+    table.append(thead, body);
+    pEl.wrap.replaceChildren(table);
+    pEl.wrap.scrollTop = 0;
+    pEl.wrap.hidden = !rows.length;
+    _ptable = { rows, body, drawn: 0 };
+    appendPowerRows(Math.min(rows.length, POWER_PAGE_ROWS));
+  }
+  function appendPowerRows(upTo) {
+    const cols = powerColumns();
+    const frag = document.createDocumentFragment();
+    for (let i = _ptable.drawn; i < upTo; i++) {
+      const r = _ptable.rows[i];
+      const tr = el('tr');
+      const th = el('th', null, MCO.formatStampMT(r.t));
+      th.scope = 'row';
+      tr.append(th);
+      for (const c of cols) tr.append(el('td', c.digits == null ? 'is-text' : null, powerCell(c, r)));
+      frag.append(tr);
+    }
+    _ptable.body.append(frag);
+    _ptable.drawn = upTo;
+    const total = _ptable.rows.length;
+    pEl.count.textContent = `Showing ${fmtCount(_ptable.drawn)} of ${fmtCount(total)} records.`;
+    const left = total - _ptable.drawn;
+    pEl.more.hidden = left <= 0;
+    pEl.more.textContent = `Show ${fmtCount(Math.min(POWER_PAGE_ROWS, left))} more`;
+  }
+  // More rows: focus stays on the button while there are more; when the
+  // last page is in, it moves to the table region the rows went into.
+  pEl.more.addEventListener('click', () => {
+    if (!_ptable.body) return;
+    appendPowerRows(Math.min(_ptable.rows.length, _ptable.drawn + POWER_PAGE_ROWS));
+    if (pEl.more.hidden) pEl.wrap.focus();
+    MCO.announce(pEl.count.textContent);
+  });
+  pEl.range.addEventListener('change', (e) => {
+    if (!e.target.value || !pd.rows) { pd.range = e.target.value || pd.range; return; }
+    pd.range = e.target.value;
+    renderPowerView(true);
+  });
+  pEl.metric.addEventListener('change', () => {
+    pd.metric = pEl.metric.value;
+    if (pd.rows) drawPowerChart();
+  });
+
+  // ── The chart ──
+  function disposePowerChart() {
+    if (powerChart) { powerChart.dispose(); powerChart = null; }
+  }
+  async function drawPowerChart() {
+    const seq = pd.seq;
+    let echarts;
+    try {
+      echarts = await loadECharts();
+    } catch (err) {
+      if (seq !== pd.seq) return;
+      pEl.note.hidden = false;
+      pEl.note.textContent = 'The chart failed to load. The records are in the table and the CSV.';
+      return;
+    }
+    if (seq !== pd.seq || !powerModal.open || !pd.rows) return;
+    paintPowerChart(echarts, false);
+  }
+  // keepZoom: a theme change redraws with the zoom it had; a new range or
+  // chart pick starts unzoomed.
+  function paintPowerChart(echarts, keepZoom) {
+    const m = POWER_METRICS.find((x) => x.key === pd.metric) || POWER_METRICS[0];
+    const rows = powerRangeRows();
+    const tok = MCO.chartTokens();
+    const colors = MCO.palette.categorical(Math.max(2, m.series.length), MCO.getTheme());
+    const meta = powerMetaById.get(pd.station);
+    const cadence = ((meta && meta.interval_minutes) || 120) * 60000;
+    const zoom = keepZoom && powerChart && powerChart.getOption && powerChart.getOption().dataZoom;
+    let dropped = 0;
+    let lo = Infinity;
+    const series = m.series.map(([key, name], i) => {
+      const data = [];
+      let prev = null;
+      for (let k = rows.length - 1; k >= 0; k--) {          // oldest first
+        const r = rows[k];
+        const y = r[key] == null ? null : Number(r[key]);
+        if (y != null && m.volts && !(y >= POWER_RULES.minValidV)) { dropped++; continue; }
+        if (prev != null && r.t - prev > cadence * 1.6) data.push([prev + cadence + mtOffset(prev), null]);  // break at a gap
+        data.push([r.t + mtOffset(r.t), y]);
+        if (y != null && y < lo) lo = y;
+        prev = r.t;
+      }
+      return {
+        type: 'line', name, data, color: colors[i],
+        showSymbol: false, sampling: 'lttb', connectNulls: false,
+        lineStyle: { width: 1.5, type: i === 1 && m.volts ? 'dotted' : 'solid' },
+      };
+    });
+    // Voltage: the class thresholds as dashed lines, in view.
+    const table = powerTable(pd.station);
+    const limits = !m.volts ? [] : table === 'emc'
+      ? [[POWER_RULES.emc.low, `Low under ${POWER_RULES.emc.low} V`], [POWER_RULES.emc.critical, `Critical under ${POWER_RULES.emc.critical} V`]]
+      : [[POWER_RULES.battery_only.low, `Low under ${POWER_RULES.battery_only.low} V`]];
+    if (limits.length) {
+      series[0].markLine = {
+        silent: true, symbol: 'none',
+        lineStyle: { color: tok.textMuted, type: 'dashed', width: 1 },
+        label: { color: tok.textSecondary, fontFamily: tok.fontUi, fontSize: 10, formatter: (p) => p.name,
+          backgroundColor: tok.surface, padding: [1, 3] },   // legible over the lines
+        // Low's label above its line, Critical's below, so they never overlap.
+        data: limits.map(([y, name], k) => ({ yAxis: y, name, label: { position: k ? 'insideEndBottom' : 'insideEndTop' } })),
+      };
+    }
+    const floor = limits.length ? Math.min(lo, ...limits.map(([y]) => y)) : null;
+
+    disposePowerChart();
+    powerChart = echarts.init(pEl.chart, null, { renderer: 'canvas' });
+    powerChart.setOption({
+      animation: !MCO.reducedMotion(),
+      useUTC: true,                              // timestamps are pre-shifted to Mountain
+      textStyle: { fontFamily: tok.fontUi, color: tok.text },
+      grid: { left: 56, right: 16, top: 34, bottom: 56 },
+      // Right-aligned, clear of the axis unit; one scrolling row when narrow.
+      legend: { top: 0, right: 8, type: pEl.chart.clientWidth < 520 ? 'scroll' : 'plain',
+        textStyle: { color: tok.textSecondary }, inactiveColor: tok.textMuted, pageTextStyle: { color: tok.textSecondary } },
+      tooltip: {
+        trigger: 'axis', backgroundColor: tok.tooltipBg, borderColor: tok.tooltipBorder,
+        textStyle: { color: tok.text, fontFamily: tok.fontUi },
+        valueFormatter: (y) => (y == null ? '—' : `${Number(y).toFixed(m.digits)} ${m.unit}`),
+      },
+      xAxis: {
+        type: 'time', axisLine: { lineStyle: { color: tok.grid } },
+        axisLabel: { color: tok.textSecondary, hideOverlap: true }, splitLine: { show: false },
+      },
+      yAxis: {
+        // The unit runs along the axis, so it never meets the legend.
+        type: 'value', name: m.unit, nameLocation: 'middle', nameRotate: 90, nameGap: 36,
+        nameTextStyle: { color: tok.textSecondary },
+        axisLabel: { color: tok.textSecondary }, splitLine: { lineStyle: { color: tok.grid } },
+        scale: true,
+        ...(floor != null && Number.isFinite(floor) ? { min: Math.floor(floor - 0.5) } : {}),
+      },
+      dataZoom: [
+        { type: 'inside', ...(zoom && zoom[0] ? { start: zoom[0].start, end: zoom[0].end } : {}) },
+        { type: 'slider', height: 18, bottom: 8, borderColor: tok.grid, textStyle: { color: tok.textSecondary },
+          ...(zoom && zoom[1] ? { start: zoom[1].start, end: zoom[1].end } : {}) },
+      ],
+      series,
+    });
+    const n = rows.length;
+    pEl.chart.setAttribute('aria-label',
+      `${m.label}, ${rangeLabel().toLowerCase()}, ${fmtCount(n)} records. The data is in the table that follows.`);
+    pEl.note.hidden = !dropped;
+    pEl.note.textContent = dropped
+      ? `${fmtCount(dropped)} voltage reading${dropped === 1 ? '' : 's'} under ${POWER_RULES.minValidV} V (logger restarts) ${dropped === 1 ? 'is' : 'are'} left off the chart; the table lists ${dropped === 1 ? 'it' : 'them'} as recorded.`
+      : '';
+  }
+  document.addEventListener('mco:themechange', () => {
+    if (powerChart && window.echarts && powerModal.open && pd.rows) paintPowerChart(window.echarts, true);
+  });
+  window.addEventListener('resize', () => powerChart && powerChart.resize());
+
+  // ── CSV of the range ──
+  function powerCSV(rows) {
+    const cols = powerColumns();
+    const q = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    // Seven significant digits: the float32 columns' noise
+    // (27.979999542236328) goes, their precision stays.
+    const num = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? String(+n.toPrecision(7)) : '';
+    };
+    const head = ['station', 'timestamp_utc', 'time_mountain'];
+    for (const c of cols) head.push(c.key, ...(c.qc ? ['qc_notes'] : []));
+    const lines = [head.join(',')];
+    for (const r of rows) {
+      const vals = [pd.station, new Date(r.t).toISOString().replace('.000Z', 'Z'), mtCsvStamp(r.t)];
+      for (const c of cols) {
+        const v = r[c.key];
+        if (c.qc) vals.push(v == null ? '' : num(v), qcWords(v) || '');
+        else if (v == null) vals.push('');
+        else vals.push(c.digits == null ? v : num(v));
+      }
+      lines.push(vals.map(q).join(','));
+    }
+    return lines.join('\r\n') + '\r\n';
+  }
+  pEl.csv.addEventListener('click', () => {
+    const rows = powerRangeRows();
+    if (!rows.length) return;
+    const url = URL.createObjectURL(new Blob([powerCSV(rows)], { type: 'text/csv;charset=utf-8' }));
+    const a = el('a');
+    a.href = url;
+    a.download = `${pd.station}_power_${pd.range}.csv`;
+    a.hidden = true;
+    powerModal.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    MCO.announce(`Downloading ${fmtCount(rows.length)} records as CSV.`);
+  });
+
+  // Closed (×, Esc, backdrop, Back): drop the chart and the records, put
+  // focus on the Power data button (the kit returns it to the opener, but a
+  // sheet refill may have replaced that button since), and take view=power
+  // out of the URL.
+  powerModal.addEventListener('close', () => {
+    const id = pd.station;
+    pd.seq++;                                  // a read still in flight is dropped
+    clearPowerView();
+    pd.station = null;
+    pd.rows = null;
+    const btn = document.getElementById('btn-power-data');
+    if (btn && _sheetFor === id && document.activeElement !== btn) btn.focus();
+    writeUrl();
+  });
+
+  // ?view=power (on load, or Back/Forward): open the dialog once the named
+  // station's sheet is open and the power files are in. A station with no
+  // power feed drops it.
+  function maybeOpenPowerView() {
+    const id = _pendingPowerView;
+    if (!id || _sheetFor !== id || !_powerLoaded) return;
+    _pendingPowerView = null;
+    if (!powerById.has(id)) { writeUrl(); return; }
+    if (!powerModal.open) openPowerData(id, document.getElementById('btn-power-data'));
   }
 
   // ── Station detail: MCO.initSheet at every width ────────────────────────
@@ -1481,6 +2349,8 @@
     renderSRTable();
     announcePopup(stationId);
     writeUrl({ push });
+    if (_pendingPowerView && _pendingPowerView !== stationId) _pendingPowerView = null;
+    maybeOpenPowerView();
   }
 
   // ── Map event wiring (called from initMap) ───────────────────────────────
@@ -1534,6 +2404,8 @@
       for (const k of ['lng', 'lat', 'zoom']) if (urlParams.has(k)) params[k] = urlParams.get(k);
     }
     if (_selectedStation) params.station = _selectedStation;
+    // Only while the Power data dialog is open, for the station under it.
+    if (_selectedStation && powerModal.open && pd.station === _selectedStation) params.view = 'power';
     if (!kbdShortcuts) params.kbd = 'off';   // preserve the a11y opt-out across navigation
     if (opts && opts.push) MCO.pushUrlState(params, { state: { mcoDetail: _selectedStation } });
     else MCO.replaceUrlState(params);
@@ -1562,10 +2434,16 @@
   // match, then re-sync the rest of the URL to the live view (the camera may
   // have moved since that entry was written). Hash-only changes (the skip
   // link's #main) are left alone.
+  // view=power follows the URL too: an entry without it closes the Power
+  // data dialog, and one with it reopens the dialog once its station's
+  // sheet is open (view is only ever written by replace, never pushed).
   MCO.onUrlState((params, hash) => {
     if (!stations.length) return;
     const st = MCO.getParamLower('station', params);
-    if (st === _selectedStation) { if (!hash) writeUrl(); return; }
+    const wantPower = !!st && MCO.getParamLower('view', params) === 'power';
+    if (powerModal.open && (!wantPower || st !== pd.station)) powerDialog.close();
+    _pendingPowerView = wantPower ? st : null;
+    if (st === _selectedStation) { maybeOpenPowerView(); if (!hash) writeUrl(); return; }
     if (!st) closeDetail({ fromHistory: true });
     else if (stationById.has(st)) goTo(st);
   });
@@ -1586,6 +2464,8 @@
     const lines = ts == null ? ['no record'] : [relativeStamp(ts), MCO.formatStampMT(ts)];
     if (emergent.length) lines.push(`${emergent.length} sensor${emergent.length === 1 ? '' : 's'} not reporting`);
     if (known.length) lines.push(`${known.length} known outage${known.length === 1 ? '' : 's'}`);
+    // Power mode only: the class and the voltages behind it.
+    if (activeMode === 'power') lines.push(powerSummary(stationId));
     const n = f.properties.colocationCount;
     if (n > 1) lines.push(`${n} stations at this site`);
     return { name: s.name, sub: s.station, line: lines };
@@ -1639,6 +2519,9 @@
     railModeSelect.value = activeMode;
     refreshDotColors();
     applyAllFilters();  // category filter belongs to the active mode
+    // The power-failure notice belongs to Power mode only.
+    if (activeMode === 'power') showPowerNotice();
+    else if (_powerNotice) _powerNotice.close();
     writeUrl();
   }
   // Mode buttons above 1400px, a <select> at or below it (the bar's shed
@@ -1722,7 +2605,9 @@
     // Rows, colors and labels are the mode's registry set; "No record" (drawn
     // hollow) follows it in the modes that have one.
     const rows = catSet(SET_FOR_MODE[activeMode]);
-    if (hasNoRecordMode(activeMode)) rows.push({ key: 'null', color: null, label: 'No record' });
+    if (hasNoRecordMode(activeMode)) {
+      rows.push({ key: 'null', color: null, label: activeMode === 'power' ? powerClass('null').label : 'No record' });
+    }
     legendTitleEl.textContent = MODES[activeMode].title;
     const rowEls = rows.map((r) => {
       const row = document.createElement('button');
@@ -1788,6 +2673,7 @@
       const mins = minutesSince(latestById.get(s.station) ?? null);
       const key = prop === 'staleStatus' ? statusBucket(mins)
         : prop === 'timeBinKey' ? timeBinKey(mins)
+        : prop === 'powerKey' ? powerKey(s.station)
         : healthKey(s.station, mins);
       counts[key] = (counts[key] || 0) + 1;
       total++;
