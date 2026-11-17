@@ -34,9 +34,9 @@
        decided 2026-10-08) so they version with the kit and can't drift; the
        navbar logo stays vendored (assets/mco-logo.png). img-src allows
        cdn.jsdelivr.net for these. -->
-  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/apple-touch-icon.png">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
        og-card.png is this app's OWN card — a live screenshot regenerated
@@ -95,8 +95,8 @@
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
        (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
        entry + shared chunk and must precede any module load. Copied byte for
@@ -114,8 +114,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/theme/mco-theme.css"
-        integrity="sha384-sYr4fDiezV2VCn92FyWqmM9kKbbJPMUCqf7xIkQqLyFlSbMmWCTGdAzNPlm6cJ65"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/theme/mco-theme.css"
+        integrity="sha384-WX2ClnLE7X3vkRXzHEfUIeqRxuvM5OcSUVWmdbZQiFdqo+OaAyb2+GZexTcjrYJz"
         crossorigin="anonymous">
 
   <style>
@@ -328,10 +328,10 @@
 <a class="mco-skip-link" href="#main">Skip to map</a>
 
 <!-- data-rail="compact" (kit 0.21.0): on a portrait phone the bar is one
-     row (badge · mode select · search · ☰) and the brand, controls and meta
+     row (badge · mode select · search · page tools · ☰) and the brand, controls and meta
      open from ☰ as a right drawer (.mco-nav-drawer, MCO.initNavRail); on a
      short landscape phone it is the 56px rail at the RIGHT edge (kit 1.0.0:
-     badge, ☰, search), with the same drawer opening beside it. Above
+     badge, ☰, search, help), with the same drawer opening beside it. Above
      compact .mco-rail is hidden and the drawer is display:contents, so the
      desktop bar is unchanged. This app has no time controls, so no
      .mco-controlbar. -->
@@ -420,8 +420,14 @@
         <line x1="7" y1="7" x2="7.01" y2="7"/>
       </svg>
     </button>
+  </div>
+  </div>
+  <!-- The page's own buttons, last in the bar (.mco-bar-tools). The kit keeps
+       them in the bar while they fit and moves theme to the top of the
+       drawer when they do not. Each word is part of its name. -->
+  <div class="mco-bar-tools" role="group" aria-label="Page tools">
     <!-- aria-label maintained at runtime by MCO.initThemeToggle -->
-    <button type="button" class="nav-btn icon-only" id="btn-theme" title="Switch theme" aria-label="Switch theme">
+    <button type="button" class="nav-btn" id="btn-theme" title="Switch theme" aria-label="Switch theme">
       <svg id="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
@@ -441,9 +447,11 @@
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none">
         <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>
       </svg>
+      <span class="btn-label">Theme</span>
     </button>
-    <button type="button" class="nav-btn mco-btn-info" id="btn-info" aria-label="About this map">?</button>
-  </div>
+    <button type="button" class="nav-btn mco-btn-info" id="btn-info" aria-label="Help">
+      <span aria-hidden="true">?</span><span class="btn-label">Help</span>
+    </button>
   </div>
 </header>
 <div class="mco-scrim" id="nav-scrim" aria-hidden="true" hidden></div>
@@ -551,15 +559,15 @@
 
 <!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
      app.js waits on MCO.map.loadMapLibre(). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/core/mco-core.js"
-        integrity="sha384-D7xlWfDfWcrBYM29SxNSZ9sjoFbu9VmboXzztcMMqsSm10bhGta1w4i7Q/mveU3A"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/core/mco-core.js"
+        integrity="sha384-Y0+6TDc0xyv3bq3FQBaH3f/wjp9D9Ce76Fe5HuZS35+gGTBm9asV5Ar4CsHm8TyW"
         crossorigin="anonymous"></script>
 <!-- mco-palette.js before mco-map.js: this app colors station markers, and
      MCO.map.markerPaint() reads MCO.palette (kit 0.9.0). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/palette/mco-palette.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/palette/mco-palette.js"
         integrity="sha384-bMyfpU5iEKAQiHDJZLqmCMt3sTGm+HBi2GIY7I9xLyV+JYrbGgHOX9+/XVXy8CYV"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.0.0/map/mco-map.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/map/mco-map.js"
         integrity="sha384-eWrG2T3udOw4ET+hy7Sq0BR/c4jCKD2+Cy4TEV2m4Dd6BL5VXGZXS2n8B8y+8v4z"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
