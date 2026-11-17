@@ -61,5 +61,5 @@ node tools/conformance.mjs ../mesonet-status
 
 ## Kit
 
-`mco-web-style` 1.1.0.
+`mco-web-style` 1.1.1.
 Design rules: mco-web-style/HOUSE-STYLE.md
