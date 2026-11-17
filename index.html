@@ -34,9 +34,9 @@
        decided 2026-10-08) so they version with the kit and can't drift; the
        navbar logo stays vendored (assets/mco-logo.png). img-src allows
        cdn.jsdelivr.net for these. -->
-  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/assets/apple-touch-icon.png">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
        og-card.png is this app's OWN card — a live screenshot regenerated
@@ -95,8 +95,8 @@
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
        (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
        entry + shared chunk and must precede any module load. Copied byte for
@@ -114,8 +114,8 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/theme/mco-theme.css"
-        integrity="sha384-WX2ClnLE7X3vkRXzHEfUIeqRxuvM5OcSUVWmdbZQiFdqo+OaAyb2+GZexTcjrYJz"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/theme/mco-theme.css"
+        integrity="sha384-SzDKR28wwlGdF7OkE1auBP3jztb0mBqYVu93PFQsGtw+H/AvE3x+eEmkAwe51kl4"
         crossorigin="anonymous">
 
   <style>
@@ -286,9 +286,6 @@
     }
 
     /* ── Help modal ───────────────────────────────────────────────────────── */
-    /* kit-override: the kit does not style <details> in the info outline yet (kit 1.0.1 will; delete this then). */
-    .info-section summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); padding: 0.6rem 0; min-height: 40px; box-sizing: border-box; }
-    .info-section code, .info-section kbd { white-space: nowrap; }
 
     /* ── Responsive ────────────────────────────────────────────────────────── */
     /* Header on the kit's breakpoint ladder (HOUSE-STYLE §3; decided
@@ -559,16 +556,16 @@
 
 <!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
      app.js waits on MCO.map.loadMapLibre(). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/core/mco-core.js"
-        integrity="sha384-Y0+6TDc0xyv3bq3FQBaH3f/wjp9D9Ce76Fe5HuZS35+gGTBm9asV5Ar4CsHm8TyW"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/core/mco-core.js"
+        integrity="sha384-Nk83STg5HZ5lrHKiiGjgNZ1J80WCPlKUNp00h/nnYYQZ2TQsvlCi5QmWdmjgUa9u"
         crossorigin="anonymous"></script>
 <!-- mco-palette.js before mco-map.js: this app colors station markers, and
      MCO.map.markerPaint() reads MCO.palette (kit 0.9.0). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/palette/mco-palette.js"
-        integrity="sha384-bMyfpU5iEKAQiHDJZLqmCMt3sTGm+HBi2GIY7I9xLyV+JYrbGgHOX9+/XVXy8CYV"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/palette/mco-palette.js"
+        integrity="sha384-mtdhOYFvyU0JAkjqYKGQdb01xBkaJEHn9EKyEXVFQw4TCdz3l0M+T/tYHlHhj6aJ"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.0/map/mco-map.js"
-        integrity="sha384-eWrG2T3udOw4ET+hy7Sq0BR/c4jCKD2+Cy4TEV2m4Dd6BL5VXGZXS2n8B8y+8v4z"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.1.1/map/mco-map.js"
+        integrity="sha384-e0qIyit6dZojkXI677UlnDsT21wfxDYDRH6tisxwamJWoUkFoM+T6A3YgkEs6KtE"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
 </body>
