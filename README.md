@@ -31,6 +31,9 @@ Values are case-insensitive. Lists take `+`, spaces or commas.
 | `hcat` | `operational`, `known`, `partial`, `outage` (list) | Health categories shown |
 | `pcat` | `ok`, `low`, `silent`, `critical`, `null` (list) | Power categories shown, `null` is no power feed |
 | `view` | `power` | With `station`, opens its Power data dialog. Ignored for a station with no power feed |
+| `range` | `7d`, `30d`, `all` | With `view=power`, the dialog's range. Default `7d` |
+| `chart` | `voltage`, `current`, `temp` | With `view=power`, what the chart shows. Default `voltage`; a voltage-only station has only `voltage` |
+| `from`, `to` | UTC times, e.g. `20261112T1700Z` | With `view=power`, the chart's zoom window. Left out when the chart is not zoomed |
 | `lng`, `lat`, `zoom` | numbers | Map view |
 | `labels` | `on`, `off` | Station id labels |
 | `legend` | `open`, `collapsed` | Legend panel |

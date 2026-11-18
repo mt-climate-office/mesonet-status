@@ -17,6 +17,7 @@ const rows = () => document.querySelectorAll('#sr-station-table tbody tr').lengt
 // state from kit 1.0.0), open when it is shown and data-state="full". Inlined in
 // each page function below — a function passed to the page can't close over
 // this module.
+const STATION_5MIN = 'acetosto';   // a real id from the power stations.json, one of the two 5-minute stations
 const PHONE = { width: 390, height: 844, touch: true };
 const POWER = 'https://data2.climate.umt.edu/mesonet/power';
 // The Power data dialog is open with records in its table and a chart drawn.
@@ -210,12 +211,92 @@ export default {
         before != null && after != null && (all === before || all === after) && /^Showing 200 of /.test(st.count));
       check(`${tag} Power data table: caption, scope=col headers, scope=row times, focusable region (${JSON.stringify(st)})`,
         st.caption && st.heads.length > 3 && st.heads.every((h) => h === 'col') && st.rowHead === 'row' && st.region === 'region,0');
+      // Scrolling the table region to its end draws the next 200 rows, with
+      // no click and no focus move.
+      const lazy = await page.evaluate(async () => {
+        const w = document.getElementById('power-table-wrap');
+        const focus = document.activeElement;
+        w.scrollTop = w.scrollHeight;
+        await new Promise((r) => setTimeout(r, 400));
+        return { count: document.getElementById('power-count').textContent, trs: w.querySelectorAll('tbody tr').length,
+          more: document.getElementById('power-more').textContent, sameFocus: document.activeElement === focus };
+      });
+      check(`${tag} Power data table draws 200 more rows when scrolled to its end (${JSON.stringify(lazy)})`,
+        /^Showing 400 of /.test(lazy.count) && lazy.trs === 400 && lazy.sameFocus);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(500);
       const c = await page.evaluate(() => ({ dialog: document.getElementById('power-modal').open, sheet: !!document.querySelector('#station-sheet[data-state="full"]:not([hidden])'),
         focus: document.activeElement?.id, q: location.search }));
       check(`${tag} Esc closes the Power data dialog only, focus back on the button, view=power out of the URL (${JSON.stringify(c)})`,
         !c.dialog && c.sheet && c.focus === 'btn-power-data' && !/view=/.test(c.q) && /station=/.test(c.q));
+      await close();
+    }
+    {
+      // The dialog's range and chart pick are in the URL (range, chart): a
+      // link restores them, a change rewrites them, and each default (7d,
+      // voltage) is left out.
+      const { page, close } = await open(`?station=${STATION}&view=power&range=30d&chart=current`, { ready: powerReady });
+      const st = () => page.evaluate(() => ({ q: location.search, range: document.querySelector('#power-range input:checked')?.value,
+        chart: document.getElementById('power-metric').value, status: document.getElementById('power-status').textContent.slice(0, 23) }));
+      const a = await st();
+      check(`${tag} Power data opens on the URL's range and chart (${JSON.stringify(a)})`,
+        a.range === '30d' && a.chart === 'current' && /^Last 30 days of records/.test(a.status) && /range=30d/.test(a.q) && /chart=current/.test(a.q));
+      await page.click('#power-range input[value="all"]');
+      await page.selectOption('#power-metric', 'temp');
+      await page.waitForTimeout(500);
+      const b = await st();
+      check(`${tag} Power data range and chart changes are written to the URL (${b.q})`, /range=all/.test(b.q) && /chart=temp/.test(b.q));
+      await page.click('#power-range input[value="7d"]');
+      await page.selectOption('#power-metric', 'voltage');
+      await page.waitForTimeout(500);
+      const c = await st();
+      check(`${tag} Power data defaults are left out of the URL (${c.q})`, /view=power/.test(c.q) && !/range=|chart=/.test(c.q));
+      await close();
+    }
+    {
+      // The chart's zoom window is in the URL (from, to: UTC minutes): a
+      // link restores it, a zoom rewrites it, and the full extent or a new
+      // range drops it. 2026-11-05 and -10 are both MST (UTC-7), so the
+      // chart's Mountain-shifted axis values are the UTC times less 7 h.
+      const { page, close } = await open(`?station=${STATION}&view=power&range=all&from=20261105T1700Z&to=20261110T0900Z`, { ready: powerReady });
+      const st = () => page.evaluate(() => {
+        const z = window.echarts.getInstanceByDom(document.getElementById('power-chart')).getOption().dataZoom[0];
+        return { q: location.search, start: z.startValue + 7 * 3600000, end: z.endValue + 7 * 3600000 };
+      });
+      const zoomTo = async (a, b) => {
+        await page.evaluate(([a, b]) => window.echarts.getInstanceByDom(document.getElementById('power-chart')).dispatchAction({ type: 'dataZoom', start: a, end: b }), [a, b]);
+        await page.waitForTimeout(800);
+      };
+      const a = await st();
+      check(`${tag} Power chart opens on the URL's zoom window (${JSON.stringify(a)})`,
+        a.start === Date.UTC(2026, 10, 5, 17) && a.end === Date.UTC(2026, 10, 10, 9) && /from=20261105T1700Z&to=20261110T0900Z/.test(a.q));
+      await zoomTo(90, 95);
+      const b = await st();
+      check(`${tag} Power chart zoom is written to the URL (${b.q})`,
+        /from=\d{8}T\d{4}Z&to=\d{8}T\d{4}Z/.test(b.q) && !/from=20261105T1700Z/.test(b.q));
+      await zoomTo(0, 100);
+      const c = await st();
+      await zoomTo(90, 95);
+      await page.click('#power-range input[value="30d"]');
+      await page.waitForTimeout(800);
+      const d = await st();
+      check(`${tag} Power chart zoom leaves the URL at the full extent and on a new range (${c.q} / ${d.q})`,
+        !/from=|to=/.test(c.q) && /range=all/.test(c.q) && !/from=|to=/.test(d.q) && /range=30d/.test(d.q));
+      await close();
+    }
+    {
+      // A 5-minute station (interval_minutes 5 in stations.json): the first
+      // page is the newest 3 days of records (864 with none missing), not
+      // 200 rows (17 hours), and the 7-day range has more to scroll to.
+      const { page, close } = await open(`?station=${STATION_5MIN}&view=power`, { ready: powerReady });
+      const st = await page.evaluate(() => ({
+        count: document.getElementById('power-count').textContent,
+        trs: document.querySelectorAll('#power-table-wrap tbody tr').length,
+        more: !document.getElementById('power-more').hidden,
+      }));
+      const [, drawn, total] = (st.count.match(/^Showing ([\d,]+) of ([\d,]+) records/) || []).map((x) => Number(String(x).replace(/,/g, '')));
+      check(`${tag} Power data table, 5-minute station: first page is 3 days of records (${JSON.stringify(st)})`,
+        drawn === st.trs && drawn > 430 && drawn <= 865 && total > drawn && st.more);
       await close();
     }
     {

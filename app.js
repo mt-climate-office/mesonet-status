@@ -445,7 +445,8 @@
   // The Power data dialog: its station, the station's records (newest
   // first), the range and chart picks, how many table rows are drawn, and a
   // sequence number so a slow read for an earlier open is dropped.
-  const pd = { station: null, rows: null, range: '7d', metric: 'voltage', seq: 0, notice: null };
+  // zoom: the chart's zoom window { from, to } (ms), null when unzoomed.
+  const pd = { station: null, rows: null, range: '7d', metric: 'voltage', zoom: null, seq: 0, notice: null };
   // description_short → wide-record key ("Soil VWC @ -91 cm" → "Soil VWC @ -91 cm [%]").
   // Wide keys are the union across stations, so one record's keys suffice;
   // rebuilt per /latest/ payload so the 30 s tick never scans strings.
@@ -524,7 +525,29 @@
   // ?station=<id>&view=power: the Power data dialog opens once that station's
   // sheet is open and the power files have loaded (maybeOpenPowerView);
   // ignored for a station with no power feed. Back/Forward set it too.
+  // &range=<7d|30d|all>&chart=<voltage|current|temp> go with view=power: the
+  // dialog's range and chart pick, each left out at its default (7d,
+  // voltage). An unknown value is the default. &from=&to= are the chart's
+  // zoom window when it is zoomed in, as UTC minutes (20261112T1700Z).
   let _pendingPowerView = _initStation && getLower('view') === 'power' ? _initStation : null;
+  const powerViewParams = (params) => ({
+    range: MCO.getParamLower('range', params), metric: MCO.getParamLower('chart', params),
+    zoom: parseZoomParams(MCO.getParamLower('from', params), MCO.getParamLower('to', params)),
+  });
+  // "20261112t1700z" (lowercased by getParamLower) → ms; null if malformed.
+  function parseZoomStamp(v) {
+    const m = /^(\d{4})(\d{2})(\d{2})t(\d{2})(\d{2})z$/.exec(v || '');
+    if (!m) return null;
+    const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    return Number.isFinite(t) ? t : null;
+  }
+  // Both ends or nothing: { from, to } in ms, or null.
+  function parseZoomParams(a, b) {
+    const from = parseZoomStamp(a), to = parseZoomStamp(b);
+    return from != null && to != null && from < to ? { from, to } : null;
+  }
+  const zoomStamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace(/[-:]/g, '') + 'Z';
+  let _pendingPowerPicks = powerViewParams(urlParams);
 
   // ── Legend category visibility (Plotly-style toggles) ────────────────────
   // Each mode has its own visible-category set. Missing URL param = all visible.
@@ -1783,7 +1806,15 @@
     integrity: 'sha384-C2iskrW/uPW46KzOjrvJIQo4YkV8lkD+QS0CrDN18IIPIpT/g2USu8bTP3nvmIAD',
   };
   const POWER_FILE_TIMEOUT_MS = 30 * 1000;
+  // The table draws its range a page at a time, newest first. The first
+  // page is every record in the newest POWER_TABLE_DAYS days and at least
+  // POWER_PAGE_ROWS rows (200 rows is 16 days at the 2-hour cadence but 17
+  // hours at a 5-minute station's). Later pages come in as the table region
+  // is scrolled to within POWER_SCROLL_PX of its end, or from the button
+  // under it.
   const POWER_PAGE_ROWS = 200;
+  const POWER_TABLE_DAYS = 3;
+  const POWER_SCROLL_PX = 240;
   const POWER_RANGES = [
     { key: '7d',  label: '7 days',  days: 7 },
     { key: '30d', label: '30 days', days: 30 },
@@ -1947,13 +1978,18 @@
   // The drawn table: its rows (the range, newest first), body and count.
   let _ptable = { rows: [], body: null, drawn: 0 };
 
-  function openPowerData(stationId, openerButton) {
+  // picks: { range, metric } from the URL (maybeOpenPowerView), each the
+  // default when missing or unknown. From the button there are none: the
+  // range starts at 7 days and the chart pick stays as it was last left.
+  function openPowerData(stationId, openerButton, picks) {
     if (!powerById.has(stationId)) return;
     const s = stationById.get(stationId);
     const emc = powerTable(stationId) === 'emc';
     pd.station = stationId;
     pd.rows = null;
-    pd.range = '7d';
+    pd.range = picks && POWER_RANGES.some((r) => r.key === picks.range) ? picks.range : POWER_RANGES[0].key;
+    if (picks) pd.metric = picks.metric || POWER_METRICS[0].key;   // an unknown or controller-only pick is settled below
+    pd.zoom = (picks && picks.zoom) || null;
     pEl.title.textContent = `Power data · ${s ? s.name : stationId}`;
     pEl.sub.textContent = `${stationId} · ${emc ? 'charge controller' : 'voltage only'} · Mountain Time`;
     for (const input of pEl.range.querySelectorAll('input')) input.checked = input.value === pd.range;
@@ -2085,7 +2121,14 @@
     pEl.wrap.scrollTop = 0;
     pEl.wrap.hidden = !rows.length;
     _ptable = { rows, body, drawn: 0 };
-    appendPowerRows(Math.min(rows.length, POWER_PAGE_ROWS));
+    appendPowerRows(Math.min(rows.length, Math.max(POWER_PAGE_ROWS, powerFirstPage(rows))));
+  }
+  // How many of the rows (newest first) fall in the newest POWER_TABLE_DAYS days.
+  function powerFirstPage(rows) {
+    if (!rows.length) return 0;
+    const start = rows[0].t - POWER_TABLE_DAYS * 86400000;
+    const n = rows.findIndex((r) => r.t < start);
+    return n < 0 ? rows.length : n;
   }
   function appendPowerRows(upTo) {
     const cols = powerColumns();
@@ -2115,13 +2158,25 @@
     if (pEl.more.hidden) pEl.wrap.focus();
     MCO.announce(pEl.count.textContent);
   });
+  // The same page when the table region is scrolled near its end (mouse,
+  // touch or the arrow keys in the focused region). Nothing is announced
+  // and focus doesn't move: the count line and the button's label update.
+  pEl.wrap.addEventListener('scroll', () => {
+    if (!_ptable.body || _ptable.drawn >= _ptable.rows.length) return;
+    if (pEl.wrap.scrollHeight - pEl.wrap.scrollTop - pEl.wrap.clientHeight > POWER_SCROLL_PX) return;
+    appendPowerRows(Math.min(_ptable.rows.length, _ptable.drawn + POWER_PAGE_ROWS));
+  }, { passive: true });
   pEl.range.addEventListener('change', (e) => {
-    if (!e.target.value || !pd.rows) { pd.range = e.target.value || pd.range; return; }
+    pd.zoom = null;                            // a new range or chart pick starts unzoomed
+    if (!e.target.value || !pd.rows) { pd.range = e.target.value || pd.range; writeUrl(); return; }
     pd.range = e.target.value;
+    writeUrl();
     renderPowerView(true);
   });
   pEl.metric.addEventListener('change', () => {
     pd.metric = pEl.metric.value;
+    pd.zoom = null;
+    writeUrl();
     if (pd.rows) drawPowerChart();
   });
 
@@ -2141,18 +2196,19 @@
       return;
     }
     if (seq !== pd.seq || !powerModal.open || !pd.rows) return;
-    paintPowerChart(echarts, false);
+    paintPowerChart(echarts);
   }
-  // keepZoom: a theme change redraws with the zoom it had; a new range or
-  // chart pick starts unzoomed.
-  function paintPowerChart(echarts, keepZoom) {
+  // Drawn with pd.zoom, so a theme change keeps the zoom and a link restores
+  // it; a new range or chart pick has cleared it.
+  function paintPowerChart(echarts) {
     const m = POWER_METRICS.find((x) => x.key === pd.metric) || POWER_METRICS[0];
     const rows = powerRangeRows();
     const tok = MCO.chartTokens();
     const colors = MCO.palette.categorical(Math.max(2, m.series.length), MCO.getTheme());
     const meta = powerMetaById.get(pd.station);
     const cadence = ((meta && meta.interval_minutes) || 120) * 60000;
-    const zoom = keepZoom && powerChart && powerChart.getOption && powerChart.getOption().dataZoom;
+    // The axis is in Mountain-shifted ms (below), and so is the zoom window.
+    const zoom = pd.zoom ? { startValue: pd.zoom.from + mtOffset(pd.zoom.from), endValue: pd.zoom.to + mtOffset(pd.zoom.to) } : {};
     let dropped = 0;
     let lo = Infinity;
     const series = m.series.map(([key, name], i) => {
@@ -2218,12 +2274,12 @@
         ...(floor != null && Number.isFinite(floor) ? { min: Math.floor(floor - 0.5) } : {}),
       },
       dataZoom: [
-        { type: 'inside', ...(zoom && zoom[0] ? { start: zoom[0].start, end: zoom[0].end } : {}) },
-        { type: 'slider', height: 18, bottom: 8, borderColor: tok.grid, textStyle: { color: tok.textSecondary },
-          ...(zoom && zoom[1] ? { start: zoom[1].start, end: zoom[1].end } : {}) },
+        { type: 'inside', ...zoom },
+        { type: 'slider', height: 18, bottom: 8, borderColor: tok.grid, textStyle: { color: tok.textSecondary }, ...zoom },
       ],
       series,
     });
+    powerChart.on('datazoom', onPowerZoom);
     const n = rows.length;
     pEl.chart.setAttribute('aria-label',
       `${m.label}, ${rangeLabel().toLowerCase()}, ${fmtCount(n)} records. The data is in the table that follows.`);
@@ -2232,8 +2288,27 @@
       ? `${fmtCount(dropped)} voltage reading${dropped === 1 ? '' : 's'} under ${POWER_RULES.minValidV} V (logger restarts) ${dropped === 1 ? 'is' : 'are'} left off the chart; the table lists ${dropped === 1 ? 'it' : 'them'} as recorded.`
       : '';
   }
+  // The user's zoom (slider, wheel, pinch or drag) into pd.zoom, to the
+  // minute, and from there the URL: null at the full extent. The URL write
+  // waits for the gesture to settle (a drag fires this continuously, and
+  // Safari caps history.replaceState calls).
+  let _zoomUrlTimer = 0;
+  function onPowerZoom() {
+    if (!powerChart) return;
+    const z = (powerChart.getOption().dataZoom || [])[0];
+    if (!z) return;
+    const unshift = (v) => {                   // Mountain-shifted ms → UTC ms
+      const t = v - mtOffset(v - mtOffset(v));
+      return Math.round(t / 60000) * 60000;
+    };
+    const full = z.start <= 0 && z.end >= 100;
+    const from = unshift(z.startValue), to = unshift(z.endValue);
+    pd.zoom = !full && Number.isFinite(from) && Number.isFinite(to) && from < to ? { from, to } : null;
+    clearTimeout(_zoomUrlTimer);
+    _zoomUrlTimer = setTimeout(writeUrl, 300);
+  }
   document.addEventListener('mco:themechange', () => {
-    if (powerChart && window.echarts && powerModal.open && pd.rows) paintPowerChart(window.echarts, true);
+    if (powerChart && window.echarts && powerModal.open && pd.rows) paintPowerChart(window.echarts);
   });
   window.addEventListener('resize', () => powerChart && powerChart.resize());
 
@@ -2290,6 +2365,8 @@
     clearPowerView();
     pd.station = null;
     pd.rows = null;
+    pd.zoom = null;
+    clearTimeout(_zoomUrlTimer);
     const btn = document.getElementById('btn-power-data');
     if (btn && _sheetFor === id && document.activeElement !== btn) btn.focus();
     writeUrl();
@@ -2303,7 +2380,20 @@
     if (!id || _sheetFor !== id || !_powerLoaded) return;
     _pendingPowerView = null;
     if (!powerById.has(id)) { writeUrl(); return; }
-    if (!powerModal.open) openPowerData(id, document.getElementById('btn-power-data'));
+    const picks = _pendingPowerPicks;
+    if (!powerModal.open) { openPowerData(id, document.getElementById('btn-power-data'), picks); return; }
+    // Already open on this station (Back/Forward): take the entry's picks.
+    if (pd.station !== id) return;
+    const range = POWER_RANGES.some((r) => r.key === picks.range) ? picks.range : POWER_RANGES[0].key;
+    const metric = [...pEl.metric.options].some((o) => o.value === picks.metric) ? picks.metric : POWER_METRICS[0].key;
+    const same = (a, b) => (!a && !b) || (!!a && !!b && a.from === b.from && a.to === b.to);
+    if (range === pd.range && metric === pd.metric && same(picks.zoom, pd.zoom)) return;
+    pd.range = range;
+    pd.metric = metric;
+    pd.zoom = picks.zoom;
+    for (const input of pEl.range.querySelectorAll('input')) input.checked = input.value === range;
+    pEl.metric.value = metric;
+    if (pd.rows) renderPowerView(true);
   }
 
   // ── Station detail: MCO.initSheet at every width ────────────────────────
@@ -2405,7 +2495,13 @@
     }
     if (_selectedStation) params.station = _selectedStation;
     // Only while the Power data dialog is open, for the station under it.
-    if (_selectedStation && powerModal.open && pd.station === _selectedStation) params.view = 'power';
+    // Its range, chart pick and zoom ride along, each only when not the default.
+    if (_selectedStation && powerModal.open && pd.station === _selectedStation) {
+      params.view = 'power';
+      if (pd.range !== POWER_RANGES[0].key) params.range = pd.range;
+      if (pd.metric !== POWER_METRICS[0].key) params.chart = pd.metric;
+      if (pd.zoom) { params.from = zoomStamp(pd.zoom.from); params.to = zoomStamp(pd.zoom.to); }
+    }
     if (!kbdShortcuts) params.kbd = 'off';   // preserve the a11y opt-out across navigation
     if (opts && opts.push) MCO.pushUrlState(params, { state: { mcoDetail: _selectedStation } });
     else MCO.replaceUrlState(params);
@@ -2443,6 +2539,7 @@
     const wantPower = !!st && MCO.getParamLower('view', params) === 'power';
     if (powerModal.open && (!wantPower || st !== pd.station)) powerDialog.close();
     _pendingPowerView = wantPower ? st : null;
+    _pendingPowerPicks = powerViewParams(params);
     if (st === _selectedStation) { maybeOpenPowerView(); if (!hash) writeUrl(); return; }
     if (!st) closeDetail({ fromHistory: true });
     else if (stationById.has(st)) goTo(st);
