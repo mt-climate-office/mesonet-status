@@ -14,8 +14,8 @@ python -m http.server 8000
 
 ## Deploy
 
-GitHub Pages publishes `main`. The production host proxies `/status/` to Pages.
-A nightly workflow commits `assets/og-card.png` to `main`, so pull before you push.
+Pushing `main` deploys through `.github/workflows/pages.yml`. The production host proxies `/status/` to Pages.
+The same workflow refreshes the social card (`assets/og-card.jpg`) every 6 hours. It reads `#refresh-stamp` and the `mco-status-seen-intro` key.
 
 ## URL parameters
 

@@ -34,23 +34,23 @@
        decided 2026-10-08) so they version with the kit and can't drift; the
        navbar logo stays vendored (assets/mco-logo.png). img-src allows
        cdn.jsdelivr.net for these. -->
-  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/assets/favicon-16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/assets/apple-touch-icon.png">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord, iMessage, etc.).
-       og-card.png is this app's OWN card — a live screenshot regenerated
-       nightly by .github/workflows/preview.yml — not a copy of the kit's
-       generic card, so it stays in assets/ (served from the production host). -->
+       og-card.jpg is this app's own card: a live screenshot that
+       .github/workflows/pages.yml (the kit's og-preview) puts in assets/ at
+       deploy time. It is not in git. -->
   <meta property="og:type"             content="website">
   <meta property="og:site_name"        content="Montana Mesonet">
   <meta property="og:title"            content="Status · Montana Mesonet">
   <meta property="og:description"      content="Real-time station status map for the Montana Mesonet network — see which HydroMet and AgriMet stations are reporting, and how recently.">
   <meta property="og:url"              content="https://mesonet.climate.umt.edu/status/">
   <meta property="og:locale"           content="en_US">
-  <meta property="og:image"            content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
-  <meta property="og:image:secure_url" content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
-  <meta property="og:image:type"       content="image/png">
+  <meta property="og:image"            content="https://mesonet.climate.umt.edu/status/assets/og-card.jpg">
+  <meta property="og:image:secure_url" content="https://mesonet.climate.umt.edu/status/assets/og-card.jpg">
+  <meta property="og:image:type"       content="image/jpeg">
   <meta property="og:image:width"      content="2400">
   <meta property="og:image:height"     content="1260">
   <meta property="og:image:alt"        content="Map of Montana showing Mesonet station reporting status as colored dots across the state.">
@@ -59,7 +59,7 @@
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Status · Montana Mesonet">
   <meta name="twitter:description" content="Real-time station status map for the Montana Mesonet network — see which HydroMet and AgriMet stations are reporting, and how recently.">
-  <meta name="twitter:image"       content="https://mesonet.climate.umt.edu/status/assets/og-card.png">
+  <meta name="twitter:image"       content="https://mesonet.climate.umt.edu/status/assets/og-card.jpg">
   <meta name="twitter:image:alt"   content="Map of Montana showing Mesonet station reporting status as colored dots across the state.">
 
   <!-- Anti-flash theme boot (mco-web-style 0.19.0+ snippets/anti-flash.html,
@@ -95,8 +95,8 @@
   <!-- House fonts: kit-hosted (mco-web-style 0.7.0), declared in mco-theme.css.
        Preloaded so the first frame is already in Outfit — no system-font flash.
        Same @version as the theme CSS; crossorigin is required on font preloads. -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/fonts/space-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <!-- MapLibre GL 6 (kit 0.8.0+): ES modules only. mco-map.js imports it
        (MCO.map.loadMapLibre); this one-line import map carries the SRI for the
        entry + shared chunk and must precede any module load. Copied byte for
@@ -114,7 +114,7 @@
         crossorigin="anonymous">
   <!-- mco-web-style: tokens (3 themes), a11y utilities, navbar/toast/tooltip/
        modal/panel shells, MapLibre polish. Pinned + SRI per house policy. -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/theme/mco-theme.css"
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/theme/mco-theme.css"
         integrity="sha384-3NnxwFCsQtUxhjn1qkcZ8kWMVfCU1wQvygRG4Z5xev3LZYiO0CIT5DmlOYmrH0mn"
         crossorigin="anonymous">
 
@@ -703,15 +703,15 @@
 
 <!-- mco-web-style (window.MCO / MCO.map). MapLibre is no longer a script tag:
      app.js waits on MCO.map.loadMapLibre(). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/core/mco-core.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/core/mco-core.js"
         integrity="sha384-Lg1ZYKs0QP/c+2yHsq7uESujpfwptLkhliGBSfiL1ujTp546sMarq5wDVwfu6+Fn"
         crossorigin="anonymous"></script>
 <!-- mco-palette.js before mco-map.js: this app colors station markers, and
      MCO.map.markerPaint() reads MCO.palette (kit 0.9.0). -->
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/palette/mco-palette.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/palette/mco-palette.js"
         integrity="sha384-mtdhOYFvyU0JAkjqYKGQdb01xBkaJEHn9EKyEXVFQw4TCdz3l0M+T/tYHlHhj6aJ"
         crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.2.0/map/mco-map.js"
+<script src="https://cdn.jsdelivr.net/gh/mt-climate-office/mco-web-style@1.4.0/map/mco-map.js"
         integrity="sha384-e0qIyit6dZojkXI677UlnDsT21wfxDYDRH6tisxwamJWoUkFoM+T6A3YgkEs6KtE"
         crossorigin="anonymous"></script>
 <script src="app.js"></script>
